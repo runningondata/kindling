@@ -21,6 +21,15 @@ Think of it as a client-side performance linter for your Spark jobs.
 
 ## Installation
 
+### From a release (no Node.js required)
+
+1. Download the latest zip from [Releases](../../releases) — `kindling-chrome-*.zip` or `kindling-firefox-*.zip`
+2. Unzip to a folder
+3. **Chrome:** Open `chrome://extensions/`, enable Developer mode, click **Load unpacked**, select the unzipped folder
+4. **Firefox:** Open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on…**, select `manifest.json` in the unzipped folder
+
+### From source
+
 1. Clone or download this repository
 2. Run `npm install && npm run build`
 3. Open `chrome://extensions/` in Chrome
@@ -134,6 +143,7 @@ npm run watch       # Bundle with live rebuild on save
 npm run lint        # ESLint (no-var, prefer-const, eqeqeq)
 npm test            # Run all 46 unit tests
 npm run build:firefox  # Build Firefox-compatible extension in dist/firefox/
+npm run package        # Build + zip both Chrome and Firefox extensions into dist/
 ```
 
 Edit files in `src/`, then reload the extension in `chrome://extensions/`.

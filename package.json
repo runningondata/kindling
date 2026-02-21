@@ -11,7 +11,8 @@
     "watch": "node esbuild.config.js --watch",
     "lint": "eslint src/ test/ esbuild.config.js eslint.config.js scripts/",
     "test": "node test/detection.test.js && node test/stage-checkers.test.js && node test/sql-checkers.test.js && node test/executor-checkers.test.js && node test/panel.test.js && node test/config.test.js",
-    "build:firefox": "node scripts/build-firefox.js"
+    "build:firefox": "node scripts/build-firefox.js",
+    "package": "npm run build && npm run build:firefox && node scripts/package.js"
   },
   "repository": {
     "type": "git",
