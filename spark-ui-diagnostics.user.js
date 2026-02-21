@@ -859,7 +859,6 @@
     if (!planText.trim()) return;
 
     const lines = planText.split('\n');
-    const planContainer = planPre;
 
     // Build a new HTML version with highlights
     let hasIssues = false;
@@ -906,7 +905,7 @@
     });
 
     if (hasIssues) {
-      planContainer.innerHTML = highlightedLines.join('\n');
+      planPre.innerHTML = highlightedLines.join('\n');
     }
   }
 
