@@ -171,6 +171,14 @@
       el.remove();
     });
 
+    // Reset any coloured plan-viz SVG nodes
+    document.querySelectorAll('#plan-viz-graph .node rect[data-kindling-original-fill]').forEach(function (rect) {
+      rect.style.fill = rect.getAttribute('data-kindling-original-fill');
+      rect.style.stroke = rect.getAttribute('data-kindling-original-stroke') || '';
+      rect.removeAttribute('data-kindling-original-fill');
+      rect.removeAttribute('data-kindling-original-stroke');
+    });
+
     // Restore any original DOM content we replaced
     Object.keys(savedOriginals).forEach(function (key) {
       var entry = savedOriginals[key];
@@ -595,6 +603,53 @@
     if (hasIssues) {
       planPre.innerHTML = highlighted.join('\n');
     }
+
+    highlightPlanVizNodes();
+  }
+
+  // --------------------------------------------------------------------------
+  // Plan visualization SVG node colouring
+  // --------------------------------------------------------------------------
+
+  var PLAN_VIZ_COLORS = {
+    critical: { fill: 'rgba(211, 47, 47, 0.25)', stroke: '#d32f2f' },
+    warning:  { fill: 'rgba(245, 124, 0, 0.25)', stroke: '#f57c00' },
+    info:     { fill: 'rgba(25, 118, 210, 0.18)', stroke: '#1976d2' },
+  };
+
+  var PLAN_VIZ_PATTERNS = [
+    { pattern: /CartesianProduct/i, severity: 'critical' },
+    { pattern: /BroadcastNestedLoopJoin/i, severity: 'warning' },
+    { pattern: /SortMergeJoin/i, severity: 'info' },
+    { pattern: /\bExchange\b(?!.*BroadcastExchange)/, severity: 'info' },
+  ];
+
+  function highlightPlanVizNodes() {
+    var svg = document.querySelector('#plan-viz-graph svg');
+    if (!svg) return;
+
+    svg.querySelectorAll('.node').forEach(function (node) {
+      var label = node.getAttribute('name') || '';
+      for (var i = 0; i < PLAN_VIZ_PATTERNS.length; i++) {
+        if (!PLAN_VIZ_PATTERNS[i].pattern.test(label)) continue;
+
+        var rect = node.querySelector('rect');
+        if (!rect) break;
+
+        var colors = PLAN_VIZ_COLORS[PLAN_VIZ_PATTERNS[i].severity];
+
+        // Preserve originals for clearHighlights
+        if (!rect.hasAttribute('data-kindling-original-fill')) {
+          rect.setAttribute('data-kindling-original-fill', rect.style.fill || '');
+          rect.setAttribute('data-kindling-original-stroke', rect.style.stroke || '');
+        }
+
+        rect.style.fill = colors.fill;
+        rect.style.stroke = colors.stroke;
+        rect.style.strokeWidth = '2px';
+        break;
+      }
+    });
   }
 
   // --------------------------------------------------------------------------

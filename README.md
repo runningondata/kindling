@@ -24,7 +24,7 @@ Think of it as a client-side performance linter for your Spark jobs.
 1. Clone or download this repository
 2. Open `chrome://extensions/` in Chrome
 3. Enable **Developer mode** (top-right toggle)
-4. Click **Load unpacked** and select the `kindling/` directory
+4. Click **Load unpacked** and select the `extension/` directory
 5. The flame icon appears in your toolbar
 
 ## Usage
@@ -66,25 +66,29 @@ Click the **Options** link in the popup (or right-click the extension icon and s
 
 Settings are stored in `chrome.storage.sync` and persist across devices.
 
-## Extension structure
+## Repository structure
 
 ```
 kindling/
-  manifest.json            Chrome extension manifest (Manifest V3)
-  background/
-    service-worker.js      Badge updates
-  content/
-    kindling.js            Detection + analysis + overlay logic
-    kindling.css            Injected styles for highlights and panel
-  popup/
-    popup.html             Popup UI
-    popup.js               Injection and result display
-    popup.css              Popup styling
-  options/
-    options.html           Threshold configuration page
-    options.js             Load/save config
-  icons/
-    icon-{16,32,48,128}.png
+  extension/                 Load this directory as an unpacked Chrome extension
+    manifest.json            Chrome extension manifest (Manifest V3)
+    background/
+      service-worker.js      Badge updates
+    content/
+      kindling.js            Detection + analysis + overlay logic
+      kindling.css           Injected styles for highlights and panel
+    popup/
+      popup.html             Popup UI
+      popup.js               Injection and result display
+      popup.css              Popup styling
+    options/
+      options.html           Threshold configuration page
+      options.js             Load/save config
+    icons/
+      icon-{16,32,48,128}.png
+  test/
+    spark_anti_patterns.py   Databricks notebook generating anti-patterns for every check
+    verify_diagnostics.js    Playwright MCP injection script for automated verification
 ```
 
 ## How it works

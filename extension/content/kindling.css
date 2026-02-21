@@ -238,6 +238,12 @@
   border-left: 3px solid #1976d2;
 }
 
+/* --- Plan visualization SVG node highlights --- */
+
+#plan-viz-graph .node rect[data-kindling-original-fill] {
+  transition: fill 0.3s ease, stroke 0.3s ease;
+}
+
 /* --- Dark mode: OS-level --- */
 
 @media (prefers-color-scheme: dark) {
