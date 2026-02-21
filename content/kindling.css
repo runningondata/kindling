@@ -1,0 +1,262 @@
+/* ============================================================================
+ * Kindling — Spark UI Diagnostic Overlay Styles
+ * Injected by the Chrome extension into the active tab.
+ * ============================================================================ */
+
+/* --- Diagnostic panel (floating top-right) --- */
+
+#kindling-panel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 99999;
+  background: var(--kindling-bg, #ffffff);
+  border: 1px solid var(--kindling-border, #ccc);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  max-width: 400px;
+  min-width: 250px;
+  color: var(--kindling-text, #333);
+  transition: all 0.2s ease;
+}
+
+#kindling-panel.collapsed {
+  min-width: auto;
+  max-width: 180px;
+}
+
+#kindling-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: var(--kindling-header-bg, #f5f5f5);
+  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid var(--kindling-border, #ccc);
+  user-select: none;
+}
+
+#kindling-panel.collapsed #kindling-panel-header {
+  border-radius: 6px;
+  border-bottom: none;
+}
+
+#kindling-panel-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+#kindling-panel-toggle {
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.6;
+}
+
+#kindling-panel-body {
+  padding: 8px 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+#kindling-panel.collapsed #kindling-panel-body {
+  display: none;
+}
+
+/* --- Issue sections inside the panel --- */
+
+.kindling-section {
+  margin-bottom: 8px;
+}
+
+.kindling-section-title {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.kindling-section-title.critical {
+  color: #d32f2f;
+}
+.kindling-section-title.warning {
+  color: #f57c00;
+}
+.kindling-section-title.info {
+  color: #1976d2;
+}
+
+.kindling-issue {
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--kindling-border-light, #eee);
+}
+
+.kindling-issue:last-child {
+  border-bottom: none;
+}
+
+.kindling-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.kindling-badge.critical {
+  background: #ffcdd2;
+  color: #b71c1c;
+}
+.kindling-badge.warning {
+  background: #ffe0b2;
+  color: #e65100;
+}
+.kindling-badge.info {
+  background: #bbdefb;
+  color: #0d47a1;
+}
+
+.kindling-count {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.kindling-count.critical {
+  background: #d32f2f;
+  color: #fff;
+}
+.kindling-count.warning {
+  background: #f57c00;
+  color: #fff;
+}
+.kindling-count.info {
+  background: #1976d2;
+  color: #fff;
+}
+
+/* --- Inline cell / row highlights --- */
+
+.kindling-highlight-critical {
+  background-color: rgba(211, 47, 47, 0.10) !important;
+}
+
+.kindling-highlight-warning {
+  background-color: rgba(245, 124, 0, 0.10) !important;
+}
+
+.kindling-highlight-info {
+  background-color: rgba(25, 118, 210, 0.10) !important;
+}
+
+/* --- Tooltips on highlighted elements --- */
+
+.kindling-tooltip {
+  position: relative;
+}
+
+.kindling-tooltip::after {
+  content: attr(data-kindling-tip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: pre-wrap;
+  max-width: 350px;
+  min-width: 200px;
+  z-index: 100000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.kindling-tooltip:hover::after {
+  opacity: 1;
+}
+
+/* --- Stage badges in list view --- */
+
+.kindling-stage-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.kindling-stage-badge.critical {
+  background: #d32f2f;
+}
+.kindling-stage-badge.warning {
+  background: #f57c00;
+}
+.kindling-stage-badge.info {
+  background: #1976d2;
+}
+
+/* --- SQL plan highlights --- */
+
+.kindling-plan-highlight {
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-weight: bold;
+}
+
+.kindling-plan-critical {
+  background-color: rgba(211, 47, 47, 0.15);
+  border-left: 3px solid #d32f2f;
+}
+
+.kindling-plan-warning {
+  background-color: rgba(245, 124, 0, 0.15);
+  border-left: 3px solid #f57c00;
+}
+
+.kindling-plan-info {
+  background-color: rgba(25, 118, 210, 0.15);
+  border-left: 3px solid #1976d2;
+}
+
+/* --- Dark mode: OS-level --- */
+
+@media (prefers-color-scheme: dark) {
+  #kindling-panel {
+    --kindling-bg: #1e1e1e;
+    --kindling-border: #444;
+    --kindling-border-light: #333;
+    --kindling-text: #ddd;
+    --kindling-header-bg: #2a2a2a;
+  }
+}
+
+/* --- Dark mode: Spark UI navbar-inverse theme --- */
+
+.navbar-inverse ~ * #kindling-panel,
+body[data-theme="dark"] #kindling-panel {
+  --kindling-bg: #1e1e1e;
+  --kindling-border: #444;
+  --kindling-border-light: #333;
+  --kindling-text: #ddd;
+  --kindling-header-bg: #2a2a2a;
+}
