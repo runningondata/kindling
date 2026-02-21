@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spark UI Diagnostics
 // @namespace    https://github.com/allyreilly/spark-ui-diagnostics
-// @version      0.1.0
+// @version      0.1.1
 // @description  Augments Apache Spark Web UI with automatic performance diagnostic overlays
 // @match        *://localhost:4040/*
 // @match        *://localhost:18080/*
@@ -849,7 +849,10 @@
   // ========================================================================
 
   function checkJoinStrategies() {
-    const planPre = document.querySelector('#physical-plan-details pre');
+    // The physical plan section is collapsed by default (display: none).
+    // We read the text content regardless of visibility.
+    const planContainer = document.getElementById('physical-plan-details');
+    const planPre = planContainer ? planContainer.querySelector('pre') : null;
     if (!planPre) return;
 
     const planText = planPre.textContent || '';
@@ -912,7 +915,8 @@
   // ========================================================================
 
   function checkPredicatePushdown() {
-    const planPre = document.querySelector('#physical-plan-details pre');
+    const planContainer = document.getElementById('physical-plan-details');
+    const planPre = planContainer ? planContainer.querySelector('pre') : null;
     if (!planPre) return;
 
     const planText = planPre.textContent || '';
@@ -966,7 +970,10 @@
     }
 
     // If we're on a job detail page, check stage durations
-    const stageTable = findTable('active-stages-table') || findTable('completed-stages-table');
+    // Stage tables use stageTag-table pattern from StageTable.scala
+    const stageTable = findTable('activeStage-table') ||
+                       findTable('completedStage-table') ||
+                       findTable('failedStage-table');
     if (!stageTable) return;
 
     const durationCol = findColumnIndex(stageTable, 'duration');
@@ -1072,10 +1079,12 @@
    * We flag stages with high shuffle spill or long durations relative to peers.
    */
   function addStageBadges() {
+    // Spark uses stageTag-table where stageTag is: activeStage, completedStage,
+    // failedStage, pendingStage, skippedStage (from StageTable.scala)
     const tableIds = [
-      'active-stages-table', 'completed-stages-table',
-      'failed-stages-table', 'pending-stages-table',
-      'skipped-stages-table'
+      'activeStage-table', 'completedStage-table',
+      'failedStage-table', 'pendingStage-table',
+      'skippedStage-table'
     ];
 
     for (const tableId of tableIds) {
