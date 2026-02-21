@@ -7,7 +7,10 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/kindling.test.js",
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "lint": "eslint src/ test/ esbuild.config.js eslint.config.js scripts/",
+    "test": "node test/detection.test.js && node test/stage-checkers.test.js && node test/sql-checkers.test.js && node test/executor-checkers.test.js && node test/panel.test.js && node test/config.test.js",
     "build:firefox": "node scripts/build-firefox.js"
   },
   "repository": {
@@ -18,6 +21,10 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
     "jsdom": "^28.1.0"
   }
 }

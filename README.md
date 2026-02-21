@@ -22,10 +22,11 @@ Think of it as a client-side performance linter for your Spark jobs.
 ## Installation
 
 1. Clone or download this repository
-2. Open `chrome://extensions/` in Chrome
-3. Enable **Developer mode** (top-right toggle)
-4. Click **Load unpacked** and select the `extension/` directory
-5. The flame icon appears in your toolbar
+2. Run `npm install && npm run build`
+3. Open `chrome://extensions/` in Chrome
+4. Enable **Developer mode** (top-right toggle)
+5. Click **Load unpacked** and select the `extension/` directory
+6. The flame icon appears in your toolbar
 
 ## Usage
 
@@ -70,25 +71,45 @@ Settings are stored in `chrome.storage.sync` and persist across devices.
 
 ```
 kindling/
-  extension/                 Load this directory as an unpacked Chrome extension
-    manifest.json            Chrome extension manifest (Manifest V3)
-    background/
-      service-worker.js      Badge updates
+  src/                         ES module source (compiled by esbuild)
     content/
-      kindling.js            Detection + analysis + overlay logic
-      kindling.css           Injected styles for highlights and panel
+      kindling.js              Entry point — state, message listener, run/clear
+      config.js                DEFAULT_CONFIG, SEVERITY, ONE_GIB
+      parsers.js               parseDuration, parseBytes, parseCellValue, etc.
+      utils.js                 escapeHtml, downloadFile
+      dom.js                   highlightElement/Row/Cell, clearHighlights
+      detection.js             detectSparkUI, getPageType
+      tables.js                findColumnIndex, getDataRows, findTable, parseSummaryMetrics
+      sql-highlighting.js      SQL tokenizer, syntax highlighting, tooltips
+      panel.js                 Diagnostic panel, export (JSON/Markdown)
+      checkers/
+        stage.js               Skew, spill, GC, stragglers, small tasks
+        sql.js                 Joins, pushdown, filters, failed queries, small files, PII, estimation
+        jobs.js                Dominant stages, stage badges
+        executors.js           Memory utilisation, executor balance
+    popup/popup.js             Popup injection and result display
+    options/options.js          Options page load/save
+  extension/                   Load this directory as an unpacked Chrome extension
+    manifest.json              Chrome extension manifest (Manifest V3)
+    background/
+      service-worker.js        Badge updates
+    content/
+      kindling.js              Built bundle (generated — do not edit)
+      kindling.css             Injected styles for highlights and panel
     popup/
-      popup.html             Popup UI
-      popup.js               Injection and result display
-      popup.css              Popup styling
+      popup.html, popup.js, popup.css
     options/
-      options.html           Threshold configuration page
-      options.js             Load/save config
+      options.html, options.js
     icons/
       icon-{16,32,48,128}.png
   test/
-    spark_anti_patterns.py   Databricks notebook generating anti-patterns for every check
-    verify_diagnostics.js    Playwright MCP injection script for automated verification
+    helpers.js                 Shared test helpers (JSDOM fixtures, assertions)
+    detection.test.js          Spark UI + page type detection tests
+    stage-checkers.test.js     Skew, spill, GC tests
+    sql-checkers.test.js       SQL checker tests
+    executor-checkers.test.js  Memory, executor balance, dominant stage tests
+    panel.test.js              Panel and export tests
+    config.test.js             Config, CSS, Firefox build tests
 ```
 
 ## How it works
@@ -106,9 +127,13 @@ The content script only runs when you click Analyze — it never auto-injects.
 
 ## Development
 
-No build tools required. Edit the files directly and reload the extension:
+```bash
+npm install         # Install dependencies
+npm run build       # Bundle src/ → extension/ (one-off)
+npm run watch       # Bundle with live rebuild on save
+npm run lint        # ESLint (no-var, prefer-const, eqeqeq)
+npm test            # Run all 46 unit tests
+npm run build:firefox  # Build Firefox-compatible extension in dist/firefox/
+```
 
-1. Make changes to any file
-2. Go to `chrome://extensions/`
-3. Click the reload button on the Kindling card
-4. Click the icon on a Spark UI page to test
+Edit files in `src/`, then reload the extension in `chrome://extensions/`.
