@@ -1,6 +1,6 @@
 /* ============================================================================
  * Kindling — Spark UI Diagnostic Overlay Styles
- * Injected by the Chrome extension into the active tab.
+ * Injected by the extension into the active tab.
  * ============================================================================ */
 
 /* --- Diagnostic panel (floating top-right) --- */
@@ -124,6 +124,12 @@
   color: #0d47a1;
 }
 
+/* PII badge — distinct purple colour */
+.kindling-badge.pii {
+  background: #e1bee7;
+  color: #6a1b9a;
+}
+
 .kindling-count {
   display: inline-block;
   padding: 1px 6px;
@@ -242,6 +248,86 @@
 
 #plan-viz-graph .node rect[data-kindling-original-fill] {
   transition: fill 0.3s ease, stroke 0.3s ease;
+}
+
+/* --- SQL Syntax Highlighting (Feature 1) --- */
+
+.kindling-sql-expr {
+  cursor: help;
+  border-bottom: 1px dotted rgba(100, 100, 100, 0.4);
+}
+
+.kindling-sql-expr:hover {
+  background-color: rgba(25, 118, 210, 0.06);
+}
+
+.kindling-sql-tooltip {
+  position: absolute;
+  z-index: 100001;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 600px;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  pointer-events: auto;
+}
+
+.kindling-sql-keyword {
+  color: #569cd6;
+  font-weight: 600;
+}
+
+.kindling-sql-function {
+  color: #c586c0;
+}
+
+.kindling-sql-string {
+  color: #6a9955;
+}
+
+.kindling-sql-number {
+  color: #ce9178;
+}
+
+.kindling-sql-operator {
+  color: #d16969;
+}
+
+/* --- Export buttons (Feature 4) --- */
+
+.kindling-export-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--kindling-border-light, #eee);
+  margin-top: 8px;
+}
+
+.kindling-export-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--kindling-border, #ccc);
+  border-radius: 3px;
+  background: var(--kindling-bg, #ffffff);
+  color: var(--kindling-text, #333);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+
+.kindling-export-btn:hover {
+  background: var(--kindling-header-bg, #f5f5f5);
+  border-color: #999;
 }
 
 /* --- Dark mode: OS-level --- */

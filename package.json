@@ -1,0 +1,23 @@
+{
+  "name": "kindling",
+  "version": "1.0.0",
+  "description": "A Chrome extension that analyses Apache Spark Web UI pages and overlays visual diagnostics highlighting performance problems. Click the extension icon, hit Analyze, and see issues inline — no cluster config changes, no Spark plugins, no server-side dependencies.",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/kindling.test.js",
+    "build:firefox": "node scripts/build-firefox.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:26794/git/allyreilly/kindling"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "jsdom": "^28.1.0"
+  }
+}

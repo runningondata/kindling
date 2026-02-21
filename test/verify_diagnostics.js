@@ -171,6 +171,56 @@ const EXPECTED_RESULTS = {
     requiredCategories: ['Stragglers'],
     messageContains: ['straggler'],
   },
+
+  // --- NEW v2 FEATURES ---
+
+  // Long filter condition (SQL detail with a complex filter)
+  'long_filter': {
+    pageType: 'sql-detail',
+    minInfo: 1,
+    requiredCategories: ['Long Filter'],
+    messageContains: ['filter condition', 'predicates'],
+  },
+
+  // Memory over-utilisation (executors page with high memory usage)
+  'memory_high': {
+    pageType: 'executors',
+    minWarning: 1,
+    requiredCategories: ['Memory'],
+    messageContains: ['memory utilisation'],
+  },
+
+  // Small files (SQL detail with many small file reads)
+  'small_files': {
+    pageType: 'sql-detail',
+    minInfo: 1,
+    requiredCategories: ['Small Files'],
+    messageContains: ['files', 'averaging'],
+  },
+
+  // PII detection (SQL detail with PII-related column names)
+  'pii_columns': {
+    pageType: 'sql-detail',
+    minInfo: 1,
+    requiredCategories: ['PII'],
+    messageContains: ['PII'],
+  },
+
+  // Estimation error (SQL detail with large estimation multipliers)
+  'estimation_error': {
+    pageType: 'sql-detail',
+    minWarning: 1,
+    requiredCategories: ['Estimation Error'],
+    messageContains: ['estimation error'],
+  },
+
+  // Failed query (SQL list or detail with failed query)
+  'failed_query': {
+    pageType: 'sql-list',
+    minCritical: 1,
+    requiredCategories: ['Failed Query'],
+    messageContains: ['failed'],
+  },
 };
 
 // ---------------------------------------------------------------------------

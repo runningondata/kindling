@@ -149,6 +149,22 @@
       </label>
       <input type="number" id="gcPressureThreshold" step="0.01" min="0" max="1">
     </div>
+
+    <div class="field">
+      <label>
+        Memory util. warning (fraction)
+        <span class="desc">Flag executor memory utilisation above this fraction (0.90 = 90%)</span>
+      </label>
+      <input type="number" id="memoryUtilWarning" step="0.01" min="0" max="1">
+    </div>
+
+    <div class="field">
+      <label>
+        Memory util. critical (fraction)
+        <span class="desc">Critical alert when executor memory exceeds this fraction (0.95 = 95%)</span>
+      </label>
+      <input type="number" id="memoryUtilCritical" step="0.01" min="0" max="1">
+    </div>
   </fieldset>
 
   <fieldset>
@@ -188,6 +204,70 @@
         <span class="desc">Flag when a stage takes more than this fraction of total job time (0.80 = 80%)</span>
       </label>
       <input type="number" id="stageTimeDominance" step="0.05" min="0" max="1">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Small Files</legend>
+
+    <div class="field">
+      <label>
+        Avg. file size warning (MB)
+        <span class="desc">Flag scan as info when average file size is below this (MB)</span>
+      </label>
+      <input type="number" id="smallFileAvgSizeWarningMb" step="1" min="1">
+    </div>
+
+    <div class="field">
+      <label>
+        Avg. file size critical (MB)
+        <span class="desc">Flag scan as warning when average file size is below this (MB)</span>
+      </label>
+      <input type="number" id="smallFileAvgSizeCriticalMb" step="0.1" min="0.1">
+    </div>
+
+    <div class="field">
+      <label>
+        Minimum file count
+        <span class="desc">Only flag small files when the number of files exceeds this</span>
+      </label>
+      <input type="number" id="smallFileMinCount" step="10" min="1">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Filters &amp; Estimation</legend>
+
+    <div class="field">
+      <label>
+        Long filter char threshold
+        <span class="desc">Flag filter expressions longer than this many characters</span>
+      </label>
+      <input type="number" id="longFilterCharThreshold" step="50" min="100">
+    </div>
+
+    <div class="field">
+      <label>
+        Long filter predicate threshold
+        <span class="desc">Flag filter expressions with more AND/OR predicates than this</span>
+      </label>
+      <input type="number" id="longFilterPredicateThreshold" step="1" min="1">
+    </div>
+
+    <div class="field">
+      <label>
+        Estimation error warning (multiplier)
+        <span class="desc">Flag row estimation errors above this multiplier (e.g. 100 = 100x off)</span>
+      </label>
+      <input type="number" id="estimationErrorWarning" step="10" min="10">
+    </div>
+
+    <div class="field">
+      <label>
+        Estimation error critical (multiplier)
+        <span class="desc">Critical alert for estimation errors above this multiplier</span>
+      </label>
+      <input type="number" id="estimationErrorCritical" step="100" min="100">
     </div>
   </fieldset>
 

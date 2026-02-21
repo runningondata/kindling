@@ -25,6 +25,15 @@
     smallTaskCountMin: 1000,
     executorSkewRatio: 3.0,
     stageTimeDominance: 0.8,
+    smallFileAvgSizeWarningMb: 10,
+    smallFileAvgSizeCriticalMb: 1,
+    smallFileMinCount: 100,
+    memoryUtilWarning: 0.90,
+    memoryUtilCritical: 0.95,
+    longFilterCharThreshold: 500,
+    longFilterPredicateThreshold: 10,
+    estimationErrorWarning: 100,
+    estimationErrorCritical: 1000,
   };
 
   let config = { ...DEFAULT_CONFIG };
@@ -73,8 +82,12 @@
       }
     }
 
-    var bare = parseFloat(str);
-    if (!isNaN(bare)) return bare;
+    // Only return bare number if string has no letter suffixes (avoids
+    // matching byte values like "2.0 GiB" as 2.0 ms duration).
+    if (!/[a-zA-Z]/.test(str)) {
+      var bare = parseFloat(str);
+      if (!isNaN(bare)) return bare;
+    }
     return NaN;
   }
 
@@ -131,6 +144,14 @@
     return div.innerHTML;
   }
 
+  function formatBytesHuman(bytes) {
+    if (bytes === 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(1024));
+    if (i >= units.length) i = units.length - 1;
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
+  }
+
   // --------------------------------------------------------------------------
   // Highlight helpers
   // --------------------------------------------------------------------------
@@ -177,6 +198,11 @@
       rect.style.stroke = rect.getAttribute('data-kindling-original-stroke') || '';
       rect.removeAttribute('data-kindling-original-fill');
       rect.removeAttribute('data-kindling-original-stroke');
+    });
+
+    // Remove SQL syntax highlighting tooltips
+    document.querySelectorAll('.kindling-sql-tooltip').forEach(function (el) {
+      el.remove();
     });
 
     // Restore any original DOM content we replaced
@@ -228,7 +254,6 @@
     var footer = document.querySelector('.navbar-fixed-bottom, footer');
     if (footer && /spark/i.test(footer.textContent)) return true;
 
-    // TODO: Detect Spark UI embedded in iframes within Databricks pages
     return false;
   }
 
@@ -525,7 +550,7 @@
 
     // Try to extract total task count from the page
     var taskCount = 0;
-    var bodyText = document.body.innerText;
+    var bodyText = document.body.innerText || document.body.textContent || '';
     var m = bodyText.match(/Total Tasks[:\s]+(\d[\d,]*)/i) ||
             bodyText.match(/(\d[\d,]*)\s+tasks?/i);
     if (m) taskCount = parseInt(m[1].replace(/,/g, ''), 10);
@@ -675,6 +700,667 @@
         'Scan with empty PushedFilters while Filter operators exist. ' +
         'Filters may not be pushed to the data source.');
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 1 — SQL Syntax Highlighting on Plan Expressions
+  // --------------------------------------------------------------------------
+
+  var SQL_KEYWORDS = [
+    'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN',
+    'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'AS', 'IS', 'NULL', 'TRUE', 'FALSE',
+    'JOIN', 'ON', 'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'UNION', 'EXISTS',
+    'DISTINCT', 'CAST', 'COALESCE', 'INNER', 'LEFT', 'RIGHT', 'OUTER', 'FULL',
+    'CROSS', 'ASC', 'DESC', 'IF', 'OVER', 'PARTITION', 'ROWS', 'RANGE',
+    'UNBOUNDED', 'PRECEDING', 'FOLLOWING', 'CURRENT', 'ROW', 'FILTER', 'PROJECT',
+    'SCAN', 'SORT', 'AGGREGATE', 'EXCHANGE', 'BROADCAST', 'HASH',
+  ];
+
+  var SQL_KEYWORD_SET = {};
+  SQL_KEYWORDS.forEach(function (kw) { SQL_KEYWORD_SET[kw] = true; });
+
+  function tokenizeSql(text) {
+    var tokens = [];
+    var i = 0;
+    var len = text.length;
+
+    while (i < len) {
+      // Whitespace
+      if (/\s/.test(text[i])) {
+        var start = i;
+        while (i < len && /\s/.test(text[i])) i++;
+        tokens.push({ type: 'ws', value: text.substring(start, i) });
+        continue;
+      }
+
+      // Single-quoted string
+      if (text[i] === "'") {
+        var start = i;
+        i++;
+        while (i < len && text[i] !== "'") {
+          if (text[i] === '\\') i++;
+          i++;
+        }
+        if (i < len) i++; // closing quote
+        tokens.push({ type: 'string', value: text.substring(start, i) });
+        continue;
+      }
+
+      // Multi-char operators
+      if (i + 1 < len) {
+        var two = text[i] + text[i + 1];
+        if (two === '<=' || two === '>=' || two === '!=' || two === '<>') {
+          tokens.push({ type: 'operator', value: two });
+          i += 2;
+          continue;
+        }
+      }
+
+      // Single-char operators
+      if ('=<>+-*/'.indexOf(text[i]) !== -1) {
+        tokens.push({ type: 'operator', value: text[i] });
+        i++;
+        continue;
+      }
+
+      // Numbers (only when not preceded by letter/underscore)
+      if (/\d/.test(text[i]) && (i === 0 || !/[a-zA-Z_#]/.test(text[i - 1]))) {
+        var start = i;
+        while (i < len && /[\d.]/.test(text[i])) i++;
+        if (i < len && /[eE]/.test(text[i])) {
+          i++;
+          if (i < len && /[+-]/.test(text[i])) i++;
+          while (i < len && /\d/.test(text[i])) i++;
+        }
+        // Suffix like L for long
+        if (i < len && /[lLdDfF]/.test(text[i])) i++;
+        tokens.push({ type: 'number', value: text.substring(start, i) });
+        continue;
+      }
+
+      // Identifiers and keywords (include # for Spark column refs like col#23)
+      if (/[a-zA-Z_]/.test(text[i])) {
+        var start = i;
+        while (i < len && /[a-zA-Z0-9_#.]/.test(text[i])) i++;
+        var word = text.substring(start, i);
+
+        // Check if followed by ( → function call
+        var peek = i;
+        while (peek < len && text[peek] === ' ') peek++;
+        if (peek < len && text[peek] === '(') {
+          if (SQL_KEYWORD_SET[word.toUpperCase()]) {
+            tokens.push({ type: 'keyword', value: word });
+          } else {
+            tokens.push({ type: 'function', value: word });
+          }
+        } else if (SQL_KEYWORD_SET[word.toUpperCase()]) {
+          tokens.push({ type: 'keyword', value: word });
+        } else {
+          tokens.push({ type: 'identifier', value: word });
+        }
+        continue;
+      }
+
+      // Everything else (parens, commas, brackets, etc.)
+      tokens.push({ type: 'punct', value: text[i] });
+      i++;
+    }
+
+    return tokens;
+  }
+
+  function renderSqlHighlighted(text) {
+    var tokens = tokenizeSql(text);
+    var html = '';
+    tokens.forEach(function (token) {
+      var esc = escapeHtml(token.value);
+      switch (token.type) {
+        case 'keyword':
+          html += '<span class="kindling-sql-keyword">' + esc + '</span>';
+          break;
+        case 'function':
+          html += '<span class="kindling-sql-function">' + esc + '</span>';
+          break;
+        case 'string':
+          html += '<span class="kindling-sql-string">' + esc + '</span>';
+          break;
+        case 'number':
+          html += '<span class="kindling-sql-number">' + esc + '</span>';
+          break;
+        case 'operator':
+          html += '<span class="kindling-sql-operator">' + esc + '</span>';
+          break;
+        default:
+          html += esc;
+      }
+    });
+    return html;
+  }
+
+  function setupSqlHighlighting() {
+    var planContainer = document.getElementById('physical-plan-details');
+    var planPre = planContainer ? planContainer.querySelector('pre') : null;
+    if (!planPre) return;
+
+    // Find expression spans within the plan text. Expressions typically appear
+    // after node names like Filter, Project, etc. We look for lines with
+    // parenthesised expressions containing SQL-like content.
+    var exprPattern = /(\+- (?:Filter|Project|Aggregate|SortMergeJoin|BroadcastHashJoin|BroadcastNestedLoopJoin|HashAggregate|Sort|Window|Expand|Generate)\s+)(.*)/;
+
+    // We operate on the already-rendered innerHTML (may contain highlight spans)
+    // Instead, work with original text for detection, then annotate
+    var originalText = savedOriginals['plan-pre']
+      ? savedOriginals['plan-pre'].text
+      : (planPre.textContent || '');
+
+    var lines = originalText.split('\n');
+    var expressionLines = [];
+    lines.forEach(function (line, idx) {
+      var match = line.match(exprPattern);
+      if (match && match[2] && match[2].length > 20) {
+        expressionLines.push({ lineIdx: idx, prefix: match[1], expr: match[2] });
+      }
+    });
+
+    if (expressionLines.length === 0) return;
+
+    // Create hoverable regions over the pre element by wrapping expression
+    // portions. Since the pre's innerHTML may already have been modified by
+    // checkJoinStrategies, we work with the current innerHTML.
+    var currentHtml = planPre.innerHTML;
+    var currentLines = currentHtml.split('\n');
+
+    expressionLines.forEach(function (entry) {
+      if (entry.lineIdx >= currentLines.length) return;
+      var lineHtml = currentLines[entry.lineIdx];
+
+      // Wrap the line in a hoverable span (only if not already wrapped)
+      if (lineHtml.indexOf('kindling-sql-expr') === -1) {
+        currentLines[entry.lineIdx] =
+          '<span class="kindling-sql-expr" data-kindling-sql="' +
+          escapeHtml(entry.expr).replace(/"/g, '&quot;') + '">' +
+          lineHtml + '</span>';
+      }
+    });
+
+    planPre.innerHTML = currentLines.join('\n');
+
+    // Attach hover handlers
+    planPre.querySelectorAll('.kindling-sql-expr').forEach(function (span) {
+      span.addEventListener('mouseenter', function (e) {
+        var existing = document.querySelector('.kindling-sql-tooltip');
+        if (existing) existing.remove();
+
+        var rawExpr = span.getAttribute('data-kindling-sql');
+        if (!rawExpr) return;
+
+        var tooltip = document.createElement('div');
+        tooltip.className = 'kindling-sql-tooltip';
+        tooltip.innerHTML = renderSqlHighlighted(rawExpr);
+
+        document.body.appendChild(tooltip);
+
+        var rect = span.getBoundingClientRect();
+        tooltip.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        tooltip.style.left = (rect.left + window.scrollX) + 'px';
+
+        // Keep tooltip on screen
+        var tooltipRect = tooltip.getBoundingClientRect();
+        if (tooltipRect.right > window.innerWidth - 10) {
+          tooltip.style.left = (window.innerWidth - tooltipRect.width - 10) + 'px';
+        }
+      });
+
+      span.addEventListener('mouseleave', function (e) {
+        // Delay removal so user can move to tooltip
+        setTimeout(function () {
+          var tooltip = document.querySelector('.kindling-sql-tooltip');
+          if (tooltip && !tooltip.matches(':hover')) {
+            tooltip.remove();
+          }
+        }, 200);
+      });
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 2 — Long Filter Condition Detection
+  // --------------------------------------------------------------------------
+
+  function checkLongFilters() {
+    var planContainer = document.getElementById('physical-plan-details');
+    var planPre = planContainer ? planContainer.querySelector('pre') : null;
+    if (!planPre) return;
+
+    var planText = savedOriginals['plan-pre']
+      ? savedOriginals['plan-pre'].text
+      : (planPre.textContent || '');
+    if (!planText.trim()) return;
+
+    // Match Filter nodes and extract the condition expression
+    var filterPattern = /\+- Filter\s+(.*)/g;
+    var match;
+
+    while ((match = filterPattern.exec(planText)) !== null) {
+      var condition = match[1];
+      if (!condition) continue;
+
+      var charLen = condition.length;
+
+      // Count AND/OR predicates
+      var predicateCount = 0;
+      var predMatch = condition.match(/\b(?:AND|OR)\b/gi);
+      if (predMatch) predicateCount = predMatch.length;
+
+      var isLong = charLen > config.longFilterCharThreshold ||
+                   predicateCount > config.longFilterPredicateThreshold;
+      if (!isLong) continue;
+
+      var severity;
+      if (charLen > 1000 || predicateCount > 20) {
+        severity = SEVERITY.WARNING;
+      } else {
+        severity = SEVERITY.INFO;
+      }
+
+      addIssue(severity, 'Long Filter',
+        'Long filter condition detected (' + predicateCount + ' predicates, ' +
+        charLen + ' characters). Very long filter expressions can cause code generation ' +
+        'issues and slow evaluation. Consider simplifying or breaking into stages.');
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 3 — Failed Query Error Handling
+  // --------------------------------------------------------------------------
+
+  function checkFailedQueries() {
+    var pageType = getPageType();
+
+    if (pageType === 'sql-list') {
+      // On the SQL list page, scan for queries marked as failed
+      var tables = document.querySelectorAll('table');
+      tables.forEach(function (table) {
+        var statusCol = findColumnIndex(table, 'status');
+        if (statusCol === -1) {
+          // Also check for visual indicators of failure
+          var rows = getDataRows(table);
+          rows.forEach(function (row) {
+            var text = cellText(row).toLowerCase();
+            if (text.indexOf('failed') !== -1) {
+              highlightRow(row, SEVERITY.CRITICAL,
+                'This query failed. Click to see error details.');
+              addIssue(SEVERITY.CRITICAL, 'Failed Query',
+                'Failed query detected in SQL list.', row);
+            }
+          });
+          return;
+        }
+
+        var rows = getDataRows(table);
+        rows.forEach(function (row) {
+          var cells = row.querySelectorAll('td');
+          if (statusCol >= cells.length) return;
+          var status = cellText(cells[statusCol]).toLowerCase();
+          if (status.indexOf('failed') !== -1) {
+            highlightRow(row, SEVERITY.CRITICAL,
+              'This query failed. Click to see error details.');
+            addIssue(SEVERITY.CRITICAL, 'Failed Query',
+              'Failed query detected in SQL list.', row);
+          }
+        });
+      });
+
+      // Also scan for any elements with failure styling
+      document.querySelectorAll('.failed, .FAILED, [class*="fail"]').forEach(function (el) {
+        var row = el.closest('tr');
+        if (row && !row.classList.contains('kindling-highlight-critical')) {
+          highlightRow(row, SEVERITY.CRITICAL,
+            'This query failed. Click to see error details.');
+          addIssue(SEVERITY.CRITICAL, 'Failed Query',
+            'Failed query detected in SQL list.', row);
+        }
+      });
+    }
+
+    if (pageType === 'sql-detail') {
+      // On a SQL detail page, check if this query has failed and extract error
+      var bodyText = document.body.innerText;
+
+      // Look for error/exception text patterns
+      var errorPatterns = [
+        /(?:Error|Exception|FAILED)[:\s]+([\s\S]{1,500})/i,
+        /Status:\s*FAILED[\s\S]*?(?:Error|Exception)[:\s]+([\s\S]{1,500})/i,
+      ];
+
+      // Check for specific failure indicators
+      var failedIndicators = document.querySelectorAll(
+        '.alert-danger, .alert-error, .error-message, [class*="error"], [class*="fail"]'
+      );
+
+      failedIndicators.forEach(function (el) {
+        var errorText = cellText(el);
+        if (errorText && errorText.length > 10) {
+          var shortError = errorText.length > 200 ? errorText.substring(0, 200) + '...' : errorText;
+          var fullTip = errorText.length > 200 ? errorText : null;
+
+          addIssue(SEVERITY.CRITICAL, 'Failed Query',
+            'Query failed: ' + shortError, el);
+          if (fullTip) {
+            highlightElement(el, SEVERITY.CRITICAL, fullTip);
+          } else {
+            highlightElement(el, SEVERITY.CRITICAL, shortError);
+          }
+        }
+      });
+
+      // Also check page title/header for "FAILED" status
+      var headers = document.querySelectorAll('h3, h4, .title, .page-title');
+      headers.forEach(function (h) {
+        if (/failed/i.test(cellText(h))) {
+          // Try to find the error message nearby
+          var nextSibling = h.nextElementSibling;
+          var errorMsg = '';
+          if (nextSibling) {
+            errorMsg = cellText(nextSibling);
+          }
+          if (!errorMsg) {
+            // Search for pre/code blocks that might contain the stack trace
+            var pre = document.querySelector('pre.stacktrace, pre.error, .error pre');
+            if (pre) errorMsg = cellText(pre);
+          }
+
+          if (errorMsg) {
+            var shortError = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
+            addIssue(SEVERITY.CRITICAL, 'Failed Query',
+              'Query failed: ' + shortError, h);
+          } else {
+            addIssue(SEVERITY.CRITICAL, 'Failed Query',
+              'This query has failed. Check the Spark UI for error details.', h);
+          }
+        }
+      });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 6 — Memory Over-Utilisation Detection (Executors page)
+  // --------------------------------------------------------------------------
+
+  function checkMemoryUtilisation() {
+    var table = document.getElementById('active-executors-table');
+    if (!table) return;
+
+    var memCol = findColumnIndex(table, 'storage memory');
+    if (memCol === -1) memCol = findColumnIndex(table, 'memory used');
+    if (memCol === -1) return;
+
+    var rows = getDataRows(table);
+    rows.forEach(function (row) {
+      var cells = row.querySelectorAll('td');
+      if (memCol >= cells.length) return;
+
+      // Skip driver row
+      if (cells[0] && cellText(cells[0]).toLowerCase() === 'driver') return;
+
+      var memText = cellText(cells[memCol]);
+      // Storage Memory column format: "used / total" e.g. "2.5 GB / 2.7 GB"
+      var parts = memText.split('/');
+      if (parts.length < 2) return;
+
+      var used = parseBytes(parts[0].trim());
+      var total = parseBytes(parts[1].trim());
+      if (isNaN(used) || isNaN(total) || total === 0) return;
+
+      var utilisation = used / total;
+      var executorId = cells[0] ? cellText(cells[0]) : 'unknown';
+      var pct = (utilisation * 100).toFixed(1);
+
+      if (utilisation >= config.memoryUtilCritical) {
+        highlightCell(cells[memCol], SEVERITY.CRITICAL,
+          'Memory utilisation: ' + pct + '%. Risk of OOM.');
+        highlightRow(row, SEVERITY.CRITICAL,
+          'Executor ' + executorId + ' memory at ' + pct + '%.\n' +
+          'Risk of spill or OOM. Increase executor memory or reduce partition sizes.');
+        addIssue(SEVERITY.CRITICAL, 'Memory',
+          'Executor ' + executorId + ' memory utilisation at ' + pct + '%. ' +
+          'Risk of spill or OOM. Consider increasing executor memory or reducing partition sizes.',
+          row);
+      } else if (utilisation >= config.memoryUtilWarning) {
+        highlightCell(cells[memCol], SEVERITY.WARNING,
+          'Memory utilisation: ' + pct + '%.');
+        highlightRow(row, SEVERITY.WARNING,
+          'Executor ' + executorId + ' memory at ' + pct + '%.\n' +
+          'Approaching capacity. Monitor for spill.');
+        addIssue(SEVERITY.WARNING, 'Memory',
+          'Executor ' + executorId + ' memory utilisation at ' + pct + '%. ' +
+          'Risk of spill or OOM. Consider increasing executor memory or reducing partition sizes.',
+          row);
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 7 — Small Files Reading Detection (SQL detail page)
+  // --------------------------------------------------------------------------
+
+  function checkSmallFiles() {
+    var planContainer = document.getElementById('physical-plan-details');
+    if (!planContainer) return;
+
+    // Look for scan node metric tables within the plan details
+    // Scan nodes are typically displayed as expandable sections with metrics
+    var planText = savedOriginals['plan-pre']
+      ? savedOriginals['plan-pre'].text
+      : '';
+
+    // Also check metric tables/sections that appear when nodes are expanded
+    var allText = planContainer.textContent || '';
+
+    // Pattern 1: Look for metrics in expanded node details
+    // "number of files read: N" and "size of files read: X MB"
+    var filesReadMatch = allText.match(/number of files read[:\s]+(\d[\d,]*)/i);
+    var sizeReadMatch = allText.match(/size of files read[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
+
+    if (!filesReadMatch && !sizeReadMatch) {
+      // Also check the node details sections
+      var detailSections = planContainer.querySelectorAll(
+        '.node-detail, .metrics, [class*="metric"], table'
+      );
+      detailSections.forEach(function (section) {
+        var text = cellText(section);
+        if (!filesReadMatch) {
+          var fm = text.match(/number of files(?:\s+read)?[:\s]+(\d[\d,]*)/i);
+          if (fm) filesReadMatch = fm;
+        }
+        if (!sizeReadMatch) {
+          var sm = text.match(/size of files(?:\s+read)?[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
+          if (sm) sizeReadMatch = sm;
+        }
+      });
+    }
+
+    // Also scan the plan text itself for FileScan metrics
+    if (!filesReadMatch) {
+      var fm = planText.match(/files\s*(?:read|scanned)[:\s]+(\d[\d,]*)/i) ||
+               allText.match(/(?:files|numFiles)[:\s]+(\d[\d,]*)/i);
+      if (fm) filesReadMatch = fm;
+    }
+    if (!sizeReadMatch) {
+      var sm = planText.match(/(?:size|bytes)\s*(?:read|scanned)[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i) ||
+               allText.match(/(?:data\s*size|totalSize)[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
+      if (sm) sizeReadMatch = sm;
+    }
+
+    if (!filesReadMatch || !sizeReadMatch) return;
+
+    var numFiles = parseInt(filesReadMatch[1].replace(/,/g, ''), 10);
+    var totalSize = parseBytes(sizeReadMatch[1]);
+
+    if (isNaN(numFiles) || isNaN(totalSize) || numFiles === 0) return;
+    if (numFiles < config.smallFileMinCount) return;
+
+    var avgSize = totalSize / numFiles;
+    var avgSizeMb = avgSize / 1048576;
+
+    if (avgSizeMb < config.smallFileAvgSizeWarningMb) {
+      var severity = avgSizeMb < config.smallFileAvgSizeCriticalMb ? SEVERITY.WARNING : SEVERITY.INFO;
+      var avgStr = formatBytesHuman(avgSize);
+
+      addIssue(severity, 'Small Files',
+        'Scan reading ' + numFiles.toLocaleString() + ' files averaging ' + avgStr +
+        ' per file. Small files cause excessive task overhead. Consider running OPTIMIZE ' +
+        'to compact files, or adjusting spark.sql.files.maxPartitionBytes.');
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 8 — PII Pattern Detection in Plan Metadata
+  // --------------------------------------------------------------------------
+
+  var PII_COLUMN_PATTERNS = [
+    /\bemail\b/i,
+    /\bphone\b/i,
+    /\bssn\b/i,
+    /\bsocial_security\b/i,
+    /\bnational_id\b/i,
+    /\bpassport\b/i,
+    /\bcredit_card\b/i,
+    /\bcard_number\b/i,
+    /\bcvv\b/i,
+    /\bdate_of_birth\b/i,
+    /\bdob\b/i,
+    /\bfirst_name\b/i,
+    /\blast_name\b/i,
+    /\bfull_name\b/i,
+    /\bcustomer_name\b/i,
+    /\buser_name\b/i,
+    /\baddress\b/i,
+    /\bpostcode\b/i,
+    /\bzip_code\b/i,
+    /\bip_address\b/i,
+    /\bnational_insurance\b/i,
+    /\bni_number\b/i,
+  ];
+
+  var PII_LITERAL_PATTERNS = [
+    { pattern: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/, label: 'email address' },
+    { pattern: /\b\d{3}-\d{2}-\d{4}\b/, label: 'SSN' },
+    { pattern: /\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/, label: 'phone number' },
+  ];
+
+  function checkPiiPatterns() {
+    var planContainer = document.getElementById('physical-plan-details');
+    if (!planContainer) return;
+
+    var planText = savedOriginals['plan-pre']
+      ? savedOriginals['plan-pre'].text
+      : (planContainer.textContent || '');
+    if (!planText.trim()) return;
+
+    var foundColumns = {};
+
+    // Check column name patterns
+    PII_COLUMN_PATTERNS.forEach(function (pattern) {
+      var matches = planText.match(new RegExp(pattern.source, 'gi'));
+      if (matches) {
+        matches.forEach(function (match) {
+          // Avoid duplicates
+          var key = match.toLowerCase();
+          if (!foundColumns[key]) {
+            foundColumns[key] = match;
+          }
+        });
+      }
+    });
+
+    Object.keys(foundColumns).forEach(function (key) {
+      addIssue(SEVERITY.INFO, 'PII',
+        'Potential PII column detected: "' + foundColumns[key] + '". ' +
+        'Verify that this data is handled in compliance with your data governance policies. ' +
+        'Consider column-level masking or access controls in Unity Catalog.');
+    });
+
+    // Check literal value patterns in filter expressions
+    PII_LITERAL_PATTERNS.forEach(function (entry) {
+      var matches = planText.match(new RegExp(entry.pattern.source, 'g'));
+      if (matches) {
+        // Deduplicate
+        var unique = [];
+        var seen = {};
+        matches.forEach(function (m) {
+          if (!seen[m]) {
+            seen[m] = true;
+            unique.push(m);
+          }
+        });
+        unique.forEach(function (val) {
+          addIssue(SEVERITY.INFO, 'PII',
+            'Potential PII literal (' + entry.label + ') found in plan: "' + val + '". ' +
+            'Consider whether this value should be visible in query plans/logs.');
+        });
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature 9 — Estimation Error Detection (SQL detail page)
+  // --------------------------------------------------------------------------
+
+  function checkEstimationErrors() {
+    var planContainer = document.getElementById('physical-plan-details');
+    if (!planContainer) return;
+
+    var allText = planContainer.textContent || '';
+
+    // Spark UI renders estimation errors with multipliers like "(1000X)"
+    // Pattern: look for row count metrics with estimation errors
+    var errorPattern = /\((\d[\d,]*)X\)/g;
+    var match;
+    var worst = 0;
+    var worstText = '';
+
+    while ((match = errorPattern.exec(allText)) !== null) {
+      var multiplier = parseInt(match[1].replace(/,/g, ''), 10);
+      if (isNaN(multiplier)) continue;
+
+      if (multiplier > worst) {
+        worst = multiplier;
+        worstText = match[0];
+      }
+
+      if (multiplier >= config.estimationErrorCritical) {
+        addIssue(SEVERITY.CRITICAL, 'Estimation Error',
+          'Row estimation error of ' + multiplier.toLocaleString() + 'x detected. ' +
+          'This suggests table/column statistics are stale or missing. ' +
+          'Run ANALYZE TABLE to update statistics. Poor estimates can cause ' +
+          'the optimizer to choose suboptimal join strategies.');
+      } else if (multiplier >= config.estimationErrorWarning) {
+        addIssue(SEVERITY.WARNING, 'Estimation Error',
+          'Row estimation error of ' + multiplier.toLocaleString() + 'x detected. ' +
+          'This suggests table/column statistics are stale or missing. ' +
+          'Run ANALYZE TABLE to update statistics. Poor estimates can cause ' +
+          'the optimizer to choose suboptimal join strategies.');
+      }
+    }
+
+    // Also look for nodes with metrics showing estimated vs actual
+    var metricTables = planContainer.querySelectorAll('table');
+    metricTables.forEach(function (table) {
+      var rows = getDataRows(table);
+      rows.forEach(function (row) {
+        var text = cellText(row);
+        var em = text.match(/\((\d[\d,]*)X\)/);
+        if (em) {
+          var mult = parseInt(em[1].replace(/,/g, ''), 10);
+          if (!isNaN(mult) && mult >= config.estimationErrorWarning) {
+            highlightRow(row, mult >= config.estimationErrorCritical ? SEVERITY.CRITICAL : SEVERITY.WARNING,
+              'Estimation error: ' + mult.toLocaleString() + 'x off.\n' +
+              'Run ANALYZE TABLE to update statistics.');
+          }
+        }
+      });
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -831,6 +1517,121 @@
   }
 
   // --------------------------------------------------------------------------
+  // Feature 4 — Export Diagnostic Report
+  // --------------------------------------------------------------------------
+
+  function getQueryIdFromUrl() {
+    var match = window.location.href.match(/[?&]id=(\d+)/);
+    return match ? match[1] : null;
+  }
+
+  function getQueryDuration() {
+    // Try to extract duration from the page
+    var text = document.body.innerText;
+    var match = text.match(/Duration[:\s]+([\d.]+\s*(?:ms|s|min|h))/i);
+    return match ? match[1] : null;
+  }
+
+  function buildExportData() {
+    var pageType = getPageType();
+    var queryId = getQueryIdFromUrl();
+    var duration = getQueryDuration();
+
+    var criticals = issues.filter(function (i) { return i.severity === SEVERITY.CRITICAL; });
+    var warnings  = issues.filter(function (i) { return i.severity === SEVERITY.WARNING; });
+    var infos     = issues.filter(function (i) { return i.severity === SEVERITY.INFO; });
+
+    return {
+      kindling_version: '2.0.0',
+      timestamp: new Date().toISOString(),
+      page_url: window.location.href,
+      page_type: pageType,
+      query_id: queryId,
+      duration: duration,
+      summary: {
+        critical: criticals.length,
+        warning: warnings.length,
+        info: infos.length,
+      },
+      findings: issues.map(function (issue) {
+        return {
+          severity: issue.severity,
+          category: issue.category,
+          message: issue.message,
+          recommendation: issue.message, // message already contains recommendation
+        };
+      }),
+    };
+  }
+
+  function exportJson() {
+    var data = buildExportData();
+    var json = JSON.stringify(data, null, 2);
+    var queryId = data.query_id || 'page';
+    var ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    var filename = 'kindling-report-' + queryId + '-' + ts + '.json';
+    downloadFile(json, filename, 'application/json');
+  }
+
+  function exportMarkdown() {
+    var data = buildExportData();
+    var md = '';
+
+    md += '# Kindling Diagnostic Report\n\n';
+    md += '- **Version:** ' + data.kindling_version + '\n';
+    md += '- **Timestamp:** ' + data.timestamp + '\n';
+    md += '- **Page URL:** ' + data.page_url + '\n';
+    md += '- **Page Type:** ' + data.page_type + '\n';
+    if (data.query_id) md += '- **Query ID:** ' + data.query_id + '\n';
+    if (data.duration) md += '- **Duration:** ' + data.duration + '\n';
+    md += '\n';
+
+    md += '## Summary\n\n';
+    md += '| Severity | Count |\n';
+    md += '|----------|-------|\n';
+    md += '| Critical | ' + data.summary.critical + ' |\n';
+    md += '| Warning  | ' + data.summary.warning + ' |\n';
+    md += '| Info     | ' + data.summary.info + ' |\n';
+    md += '\n';
+
+    if (data.findings.length === 0) {
+      md += 'No issues detected.\n';
+    } else {
+      var severityOrder = ['critical', 'warning', 'info'];
+      severityOrder.forEach(function (sev) {
+        var items = data.findings.filter(function (f) { return f.severity === sev; });
+        if (items.length === 0) return;
+
+        md += '## ' + sev.charAt(0).toUpperCase() + sev.slice(1) + ' (' + items.length + ')\n\n';
+        items.forEach(function (item) {
+          md += '- **[' + item.category + ']** ' + item.message + '\n';
+        });
+        md += '\n';
+      });
+    }
+
+    var queryId = data.query_id || 'page';
+    var ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+    var filename = 'kindling-report-' + queryId + '-' + ts + '.md';
+    downloadFile(md, filename, 'text/markdown');
+  }
+
+  function downloadFile(content, filename, mimeType) {
+    var blob = new Blob([content], { type: mimeType });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  }
+
+  // --------------------------------------------------------------------------
   // Diagnostic panel (on-page floating summary)
   // --------------------------------------------------------------------------
 
@@ -857,9 +1658,14 @@
           '<div style="padding:8px 0;color:#666;font-size:12px;">' +
             'No performance issues detected on this page.' +
           '</div>' +
+          '<div class="kindling-export-bar">' +
+            '<button class="kindling-export-btn" data-export="json">Export JSON</button>' +
+            '<button class="kindling-export-btn" data-export="md">Export Markdown</button>' +
+          '</div>' +
         '</div>';
       document.body.appendChild(panel);
       setupPanelToggle(panel);
+      setupExportButtons(panel);
       return;
     }
 
@@ -881,13 +1687,24 @@
       body += '<div class="kindling-section-title ' + g.severity + '">' +
               g.label + ' (' + g.items.length + ')</div>';
       g.items.forEach(function (item) {
+        var badgeClass = item.severity;
+        // PII findings get a distinct purple badge
+        if (item.category === 'PII') {
+          badgeClass = 'pii';
+        }
         body += '<div class="kindling-issue">' +
-          '<span class="kindling-badge ' + item.severity + '">' + escapeHtml(item.category) + '</span> ' +
+          '<span class="kindling-badge ' + badgeClass + '">' + escapeHtml(item.category) + '</span> ' +
           escapeHtml(item.message) +
           '</div>';
       });
       body += '</div>';
     });
+
+    // Export buttons
+    body += '<div class="kindling-export-bar">' +
+      '<button class="kindling-export-btn" data-export="json">Export JSON</button>' +
+      '<button class="kindling-export-btn" data-export="md">Export Markdown</button>' +
+      '</div>';
 
     panel.innerHTML =
       '<div id="kindling-panel-header">' +
@@ -898,6 +1715,7 @@
 
     document.body.appendChild(panel);
     setupPanelToggle(panel);
+    setupExportButtons(panel);
 
     // Make issues clickable to scroll to the affected element
     var issueEls = panel.querySelectorAll('.kindling-issue');
@@ -922,6 +1740,20 @@
     header.addEventListener('click', function () {
       panel.classList.toggle('collapsed');
       toggle.innerHTML = panel.classList.contains('collapsed') ? '&#x25B6;' : '&#x25BC;';
+    });
+  }
+
+  function setupExportButtons(panel) {
+    panel.querySelectorAll('.kindling-export-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var format = btn.getAttribute('data-export');
+        if (format === 'json') {
+          exportJson();
+        } else if (format === 'md') {
+          exportMarkdown();
+        }
+      });
     });
   }
 
@@ -965,10 +1797,16 @@
         case 'sql-detail': {
           checkJoinStrategies();
           checkPredicatePushdown();
+          checkLongFilters();
+          checkSmallFiles();
+          checkPiiPatterns();
+          checkEstimationErrors();
+          setupSqlHighlighting();
+          checkFailedQueries();
           break;
         }
         case 'sql-list': {
-          // No specific checks for the SQL list page yet.
+          checkFailedQueries();
           break;
         }
         case 'jobs-list':
@@ -978,6 +1816,7 @@
         }
         case 'executors': {
           checkExecutorBalance();
+          checkMemoryUtilisation();
           break;
         }
         default:
@@ -1064,9 +1903,4 @@
       return false;
     }
   });
-
-  // TODO: "Watch mode" — re-analyse when page content changes
-  // TODO: Export diagnostic report as JSON or markdown
-  // TODO: Detect Spark UI embedded in iframes (Databricks)
-  // TODO: Firefox WebExtension support
 })();
