@@ -182,7 +182,7 @@ uv run pytest -v
 
 #### Coverage gaps
 
-Some checks cannot be tested in PySpark local mode:
+Some checks cannot be tested in PySpark local mode or CI:
 
 | Check | Reason |
 |-------|--------|
@@ -191,5 +191,6 @@ Some checks cannot be tested in PySpark local mode:
 | Stragglers | Requires `active-tasks-table` which only exists mid-execution |
 | Shuffle spill | Unified memory manager absorbs spill with available driver memory |
 | Dominant stage | Local mode stages share CPU — can't create >80% time dominance |
+| Small tasks | CI runners are too slow — median task duration exceeds 50ms threshold |
 
 These checks are covered by unit tests with synthetic DOM fixtures. The Databricks test notebook (`test/spark_anti_patterns.py`) covers all checks for manual verification on a real cluster.
