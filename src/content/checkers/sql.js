@@ -199,27 +199,14 @@ function checkFailedQueriesOnList(addIssue) {
   const tables = document.querySelectorAll('table');
   tables.forEach(table => {
     const statusCol = findColumnIndex(table, 'status');
-    if (statusCol === -1) {
-      const rows = getDataRows(table);
-      rows.forEach(row => {
-        const text = cellText(row).toLowerCase();
-        if (text.indexOf('failed') !== -1) {
-          const label = describeFailedRow(row, table) || 'Unknown query';
-          highlightRow(row, SEVERITY.CRITICAL,
-            'This query failed. Click to see error details.');
-          addIssue(SEVERITY.CRITICAL, 'Failed Query',
-            'Failed query ' + label, row);
-        }
-      });
-      return;
-    }
+    if (statusCol === -1) return;
 
     const rows = getDataRows(table);
     rows.forEach(row => {
       const cells = row.querySelectorAll('td');
       if (statusCol >= cells.length) return;
-      const status = cellText(cells[statusCol]).toLowerCase();
-      if (status.indexOf('failed') !== -1) {
+      const status = cellText(cells[statusCol]).toLowerCase().trim();
+      if (status === 'failed') {
         const label = describeFailedRow(row, table) || 'Unknown query';
         highlightRow(row, SEVERITY.CRITICAL,
           'This query failed. Click to see error details.');
@@ -229,7 +216,8 @@ function checkFailedQueriesOnList(addIssue) {
     });
   });
 
-  document.querySelectorAll('.failed, .FAILED, [class*="fail"]').forEach(el => {
+  // Only match rows that have an explicit "FAILED" status text in a cell
+  document.querySelectorAll('td.failed, td.FAILED').forEach(el => {
     const row = el.closest('tr');
     if (row && !row.classList.contains('kindling-highlight-critical')) {
       const table = row.closest('table');
