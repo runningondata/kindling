@@ -72,6 +72,23 @@ test('Detects missing predicate pushdown', () => {
   assertMinSeverity(result, 'warning', 1);
 });
 
+test('Detects missing pushdown with V2 scan (PySpark 4.x)', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=4',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- Filter (value > 0.5)
+   +- Scan parquet spark_catalog.default.test_table [id, value]
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Predicate Pushdown');
+  assertMinSeverity(result, 'warning', 1);
+});
+
 // --- SQL Syntax Highlighting ---
 
 console.log('--- SQL Syntax Highlighting ---');

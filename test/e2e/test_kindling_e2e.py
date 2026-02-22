@@ -72,9 +72,6 @@ def test_gc_pressure(spark, page, spark_ui_url):
     _assert_detected(result, "GC Pressure")
 
 
-@pytest.mark.skip(
-    reason="PySpark 4.x UI text format changed — task count regex doesn't match"
-)
 def test_small_tasks(spark, page, spark_ui_url):
     run_small_tasks(spark)
     goto_stage_detail(page, spark_ui_url)
@@ -128,9 +125,6 @@ def test_sort_merge_join(spark, page, spark_ui_url):
     assert any(i["category"] == "Shuffle" for i in result["issues"])
 
 
-@pytest.mark.skip(
-    reason="PySpark 4.x plan text uses 'Scan parquet' without PushedFilters field"
-)
 def test_missing_pushdown(spark, page, spark_ui_url):
     run_missing_pushdown(spark)
     goto_sql_detail(page, spark_ui_url)

@@ -112,10 +112,15 @@ export function checkPredicatePushdown(savedOriginals, addIssue) {
     : (planPre.textContent || '');
   if (!planText.trim()) return;
 
-  const hasEmptyPush = /(?:FileScan|Scan)\s+\w+.*?PushedFilters:\s*\[\s*\]/gi.test(planText);
   const hasFilter = /\bFilter\b/i.test(planText);
+  if (!hasFilter) return;
 
-  if (hasEmptyPush && hasFilter) {
+  // V1 scans (FileScan) include PushedFilters in metadata
+  const hasEmptyPush = /FileScan\s+\w+.*?PushedFilters:\s*\[\s*\]/gi.test(planText);
+  // V2 scans (Scan parquet) omit PushedFilters entirely
+  const hasV2Scan = /\+- Scan\s+\w+/i.test(planText) && !/PushedFilters:/i.test(planText);
+
+  if (hasEmptyPush || hasV2Scan) {
     addIssue(SEVERITY.WARNING, 'Predicate Pushdown',
       'Scan with empty PushedFilters while Filter operators exist. ' +
       'Filters may not be pushed to the data source.');

@@ -166,6 +166,7 @@ export function checkSmallTasks(metrics, config, addIssue) {
   let taskCount = 0;
   const bodyText = document.body.innerText || document.body.textContent || '';
   const m = bodyText.match(/Total Tasks[:\s]+(\d[\d,]*)/i) ||
+            bodyText.match(/(\d[\d,]*)\s+Completed\s+Tasks/i) ||
             bodyText.match(/(\d[\d,]*)\s+tasks?/i);
   if (m) taskCount = parseInt(m[1].replace(/,/g, ''), 10);
 

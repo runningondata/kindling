@@ -18,6 +18,12 @@ Think of it as a client-side performance linter for your Spark jobs.
 | 8 | **Shuffle indicators** — Exchange nodes highlighted in the physical plan | SQL detail | Info |
 | 9 | **Dominant stages** — A single stage consuming most of job time | Jobs / Job detail | Warning |
 | 10 | **Executor imbalance** — Large spread in shuffle read across executors | Executors | Warning |
+| 11 | **Memory over-utilisation** — Executor storage memory approaching capacity | Executors | Critical / Warning |
+| 12 | **Long filter conditions** — Excessive predicates or character count in filters | SQL detail | Warning / Info |
+| 13 | **Failed queries** — Queries with failed status or error messages | SQL list / detail | Critical |
+| 14 | **Small files** — Scans reading many small files (high task overhead) | SQL detail | Warning / Info |
+| 15 | **PII detection** — Column names or literals matching PII patterns | SQL detail | Info |
+| 16 | **Estimation errors** — Large row estimation multipliers from stale statistics | SQL detail | Critical / Warning |
 
 ## Installation
 
@@ -73,6 +79,15 @@ Click the **Options** link in the popup (or right-click the extension icon and s
 | Small task count min | 1000 | Minimum tasks before flagging |
 | Executor skew ratio | 3.0 | Max/min executor shuffle read ratio |
 | Stage time dominance | 0.80 | Stage time as fraction of total job time |
+| Memory utilisation (warning) | 0.70 | Storage memory fraction to flag warning |
+| Memory utilisation (critical) | 0.90 | Storage memory fraction to flag critical |
+| Long filter characters | 500 | Filter condition character count threshold |
+| Long filter predicates | 10 | Filter condition predicate count threshold |
+| Small file min count | 100 | Minimum files before flagging small files |
+| Small file avg size (warning) | 32 MB | Average file size below this triggers warning |
+| Small file avg size (critical) | 1 MB | Average file size below this triggers critical |
+| Estimation error (warning) | 10 | Row estimation multiplier for warning |
+| Estimation error (critical) | 100 | Row estimation multiplier for critical |
 
 Settings are stored in `chrome.storage.sync` and persist across devices.
 
@@ -85,12 +100,12 @@ kindling/
       kindling.js              Entry point — state, message listener, run/clear
       config.js                DEFAULT_CONFIG, SEVERITY, ONE_GIB
       parsers.js               parseDuration, parseBytes, parseCellValue, etc.
-      utils.js                 escapeHtml, downloadFile
+      utils.js                 escapeHtml
       dom.js                   highlightElement/Row/Cell, clearHighlights
       detection.js             detectSparkUI, getPageType
       tables.js                findColumnIndex, getDataRows, findTable, parseSummaryMetrics
       sql-highlighting.js      SQL tokenizer, syntax highlighting, tooltips
-      panel.js                 Diagnostic panel, export (JSON/Markdown)
+      panel.js                 Diagnostic panel, clipboard export (JSON/Markdown)
       checkers/
         stage.js               Skew, spill, GC, stragglers, small tasks
         sql.js                 Joins, pushdown, filters, failed queries, small files, PII, estimation
@@ -119,6 +134,11 @@ kindling/
     executor-checkers.test.js  Memory, executor balance, dominant stage tests
     panel.test.js              Panel and export tests
     config.test.js             Config, CSS, Firefox build tests
+    spark_anti_patterns.py     Databricks notebook for manual testing
+  test/e2e/                    Playwright + PySpark E2E tests
+    conftest.py                Fixtures, injection helpers, Spark REST API helpers
+    workloads.py               PySpark workload generators
+    test_kindling_e2e.py       E2E test cases
 ```
 
 ## How it works
@@ -141,9 +161,35 @@ npm install         # Install dependencies
 npm run build       # Bundle src/ → extension/ (one-off)
 npm run watch       # Bundle with live rebuild on save
 npm run lint        # ESLint (no-var, prefer-const, eqeqeq)
-npm test            # Run all 46 unit tests
+npm test            # Run all unit tests
+npm run test:e2e    # Build + run E2E tests (requires Java, uv)
 npm run build:firefox  # Build Firefox-compatible extension in dist/firefox/
 npm run package        # Build + zip both Chrome and Firefox extensions into dist/
 ```
 
 Edit files in `src/`, then reload the extension in `chrome://extensions/`.
+
+### E2E tests
+
+The E2E test suite (`test/e2e/`) spins up a local PySpark session with Spark UI, generates workloads that trigger each diagnostic, then uses Playwright to inject Kindling and validate detection. Requires Java 17+ and [uv](https://docs.astral.sh/uv/).
+
+```bash
+cd test/e2e
+uv sync
+uv run playwright install chromium
+uv run pytest -v
+```
+
+#### Coverage gaps
+
+Some checks cannot be tested in PySpark local mode:
+
+| Check | Reason |
+|-------|--------|
+| Executor imbalance | Local mode only has the driver — no executors to compare |
+| Memory utilisation | Checker skips driver rows — needs non-driver executors |
+| Stragglers | Requires `active-tasks-table` which only exists mid-execution |
+| Shuffle spill | Unified memory manager absorbs spill with available driver memory |
+| Dominant stage | Local mode stages share CPU — can't create >80% time dominance |
+
+These checks are covered by unit tests with synthetic DOM fixtures. The Databricks test notebook (`test/spark_anti_patterns.py`) covers all checks for manual verification on a real cluster.
