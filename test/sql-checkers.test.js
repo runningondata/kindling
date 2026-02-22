@@ -188,6 +188,8 @@ test('Detects failed query on SQL list page', () => {
   const result = runKindling(dom);
   assertContainsCategory(result, 'Failed Query');
   assertMinSeverity(result, 'critical', 1);
+  assertMessageContains(result, 'ID 2');
+  assertMessageContains(result, 'SELECT * FROM bad');
 });
 
 test('Detects failed query on SQL detail page with error element', () => {

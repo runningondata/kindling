@@ -169,6 +169,24 @@ export function checkLongFilters(savedOriginals, config, addIssue) {
 
 // ---- Failed query error handling ----
 
+function describeFailedRow(row, table) {
+  const cells = row.querySelectorAll('td');
+  const idCol = findColumnIndex(table, 'id');
+  const descCol = findColumnIndex(table, 'description');
+  const parts = [];
+  if (idCol !== -1 && idCol < cells.length) {
+    parts.push('ID ' + cellText(cells[idCol]).trim());
+  }
+  if (descCol !== -1 && descCol < cells.length) {
+    const desc = cellText(cells[descCol]).trim();
+    if (desc) {
+      const short = desc.length > 80 ? desc.substring(0, 80) + '...' : desc;
+      parts.push('"' + short + '"');
+    }
+  }
+  return parts.length > 0 ? parts.join(' — ') : null;
+}
+
 function checkFailedQueriesOnList(addIssue) {
   const tables = document.querySelectorAll('table');
   tables.forEach(table => {
@@ -178,10 +196,11 @@ function checkFailedQueriesOnList(addIssue) {
       rows.forEach(row => {
         const text = cellText(row).toLowerCase();
         if (text.indexOf('failed') !== -1) {
+          const label = describeFailedRow(row, table) || 'Unknown query';
           highlightRow(row, SEVERITY.CRITICAL,
             'This query failed. Click to see error details.');
           addIssue(SEVERITY.CRITICAL, 'Failed Query',
-            'Failed query detected in SQL list.', row);
+            'Failed query ' + label, row);
         }
       });
       return;
@@ -193,10 +212,11 @@ function checkFailedQueriesOnList(addIssue) {
       if (statusCol >= cells.length) return;
       const status = cellText(cells[statusCol]).toLowerCase();
       if (status.indexOf('failed') !== -1) {
+        const label = describeFailedRow(row, table) || 'Unknown query';
         highlightRow(row, SEVERITY.CRITICAL,
           'This query failed. Click to see error details.');
         addIssue(SEVERITY.CRITICAL, 'Failed Query',
-          'Failed query detected in SQL list.', row);
+          'Failed query ' + label, row);
       }
     });
   });
@@ -204,10 +224,12 @@ function checkFailedQueriesOnList(addIssue) {
   document.querySelectorAll('.failed, .FAILED, [class*="fail"]').forEach(el => {
     const row = el.closest('tr');
     if (row && !row.classList.contains('kindling-highlight-critical')) {
+      const table = row.closest('table');
+      const label = table ? describeFailedRow(row, table) : null;
       highlightRow(row, SEVERITY.CRITICAL,
         'This query failed. Click to see error details.');
       addIssue(SEVERITY.CRITICAL, 'Failed Query',
-        'Failed query detected in SQL list.', row);
+        'Failed query ' + (label || 'detected in SQL list'), row);
     }
   });
 }
