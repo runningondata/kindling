@@ -171,19 +171,27 @@ export function checkLongFilters(savedOriginals, config, addIssue) {
 
 function describeFailedRow(row, table) {
   const cells = row.querySelectorAll('td');
-  const idCol = findColumnIndex(table, 'id');
-  const descCol = findColumnIndex(table, 'description');
+  if (cells.length === 0) return null;
+
   const parts = [];
-  if (idCol !== -1 && idCol < cells.length) {
-    parts.push('ID ' + cellText(cells[idCol]).trim());
+
+  // Try the first cell as a numeric ID (most SQL tables start with ID column)
+  const firstCell = cellText(cells[0]).trim();
+  if (/^\d+$/.test(firstCell)) {
+    parts.push('ID ' + firstCell);
   }
-  if (descCol !== -1 && descCol < cells.length) {
-    const desc = cellText(cells[descCol]).trim();
-    if (desc) {
+
+  // Try the description column, or fall back to the second cell
+  const descCol = findColumnIndex(table, 'description');
+  const descIdx = descCol !== -1 ? descCol : 1;
+  if (descIdx < cells.length) {
+    const desc = cellText(cells[descIdx]).trim();
+    if (desc && !/\n/.test(desc) && desc.length < 200) {
       const short = desc.length > 80 ? desc.substring(0, 80) + '...' : desc;
       parts.push('"' + short + '"');
     }
   }
+
   return parts.length > 0 ? parts.join(' — ') : null;
 }
 
