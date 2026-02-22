@@ -1,0 +1,32 @@
+{
+  "name": "kindling",
+  "version": "1.0.0",
+  "description": "A Chrome extension that analyses Apache Spark Web UI pages and overlays visual diagnostics highlighting performance problems. Click the extension icon, hit Analyze, and see issues inline — no cluster config changes, no Spark plugins, no server-side dependencies.",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "build": "node esbuild.config.js",
+    "watch": "node esbuild.config.js --watch",
+    "lint": "eslint src/ test/ esbuild.config.js eslint.config.js scripts/",
+    "test": "node test/detection.test.js && node test/stage-checkers.test.js && node test/sql-checkers.test.js && node test/executor-checkers.test.js && node test/panel.test.js && node test/config.test.js",
+    "test:e2e": "npm run build && cd test/e2e && uv run playwright install chromium --with-deps && uv run pytest -v",
+    "build:firefox": "node scripts/build-firefox.js",
+    "package": "npm run build && npm run build:firefox && node scripts/package.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:26794/git/allyreilly/kindling"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "jsdom": "^28.1.0"
+  }
+}

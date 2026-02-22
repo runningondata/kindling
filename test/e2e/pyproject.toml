@@ -1,0 +1,15 @@
+[project]
+name = "kindling-e2e"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "pyspark>=3.5",
+    "pytest>=8.0",
+    "playwright>=1.49",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+markers = [
+    "slow: marks tests that take a long time",
+]

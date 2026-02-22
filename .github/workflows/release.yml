@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update version in manifest and source
+        run: |
+          node -e "
+            const fs = require('fs');
+            const v = '${{ steps.version.outputs.version }}';
+            const m = JSON.parse(fs.readFileSync('extension/manifest.json', 'utf8'));
+            m.version = v;
+            fs.writeFileSync('extension/manifest.json', JSON.stringify(m, null, 2) + '\n');
+            const panel = fs.readFileSync('src/content/panel.js', 'utf8');
+            fs.writeFileSync('src/content/panel.js', panel.replace(/kindling_version: '[^']*'/, \"kindling_version: '\" + v + \"'\"));
+          "
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:firefox
+
+      - name: Zip Chrome extension
+        run: cd extension && zip -r "../kindling-chrome-v${{ steps.version.outputs.version }}.zip" .
+
+      - name: Zip Firefox extension
+        run: cd dist/firefox && zip -r "../../kindling-firefox-v${{ steps.version.outputs.version }}.zip" .
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "kindling-chrome-v${{ steps.version.outputs.version }}.zip" \
+            "kindling-firefox-v${{ steps.version.outputs.version }}.zip" \
+            --generate-notes
