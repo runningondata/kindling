@@ -1,5 +1,5 @@
 import { SEVERITY } from './config.js';
-import { escapeHtml, downloadFile } from './utils.js';
+import { escapeHtml } from './utils.js';
 import { getPageType } from './detection.js';
 
 function getQueryIdFromUrl() {
@@ -43,16 +43,22 @@ export function buildExportData(issues) {
   };
 }
 
-export function exportJson(issues) {
-  const data = buildExportData(issues);
-  const json = JSON.stringify(data, null, 2);
-  const queryId = data.query_id || 'page';
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-  const filename = 'kindling-report-' + queryId + '-' + ts + '.json';
-  downloadFile(json, filename, 'application/json');
+function copyToClipboard(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (!btn) return;
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
 }
 
-export function exportMarkdown(issues) {
+export function exportJson(issues, btn) {
+  const data = buildExportData(issues);
+  const json = JSON.stringify(data, null, 2);
+  copyToClipboard(json, btn);
+}
+
+export function exportMarkdown(issues, btn) {
   const data = buildExportData(issues);
   let md = '';
 
@@ -89,10 +95,7 @@ export function exportMarkdown(issues) {
     });
   }
 
-  const queryId = data.query_id || 'page';
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-  const filename = 'kindling-report-' + queryId + '-' + ts + '.md';
-  downloadFile(md, filename, 'text/markdown');
+  copyToClipboard(md, btn);
 }
 
 export function setupPanelToggle(panel) {
@@ -110,9 +113,9 @@ export function setupExportButtons(panel, issues) {
       e.stopPropagation();
       const format = btn.getAttribute('data-export');
       if (format === 'json') {
-        exportJson(issues);
+        exportJson(issues, btn);
       } else if (format === 'md') {
-        exportMarkdown(issues);
+        exportMarkdown(issues, btn);
       }
     });
   });
@@ -144,8 +147,8 @@ function buildPanelBody(issues, criticals, warnings, infos) {
         'No performance issues detected on this page.' +
       '</div>' +
       '<div class="kindling-export-bar">' +
-        '<button class="kindling-export-btn" data-export="json">Export JSON</button>' +
-        '<button class="kindling-export-btn" data-export="md">Export Markdown</button>' +
+        '<button class="kindling-export-btn" data-export="json">Copy JSON</button>' +
+        '<button class="kindling-export-btn" data-export="md">Copy Markdown</button>' +
       '</div>' +
       '</div>';
   }
@@ -174,8 +177,8 @@ function buildPanelBody(issues, criticals, warnings, infos) {
   });
 
   body += '<div class="kindling-export-bar">' +
-    '<button class="kindling-export-btn" data-export="json">Export JSON</button>' +
-    '<button class="kindling-export-btn" data-export="md">Export Markdown</button>' +
+    '<button class="kindling-export-btn" data-export="json">Copy JSON</button>' +
+    '<button class="kindling-export-btn" data-export="md">Copy Markdown</button>' +
     '</div>';
 
   return '<div id="kindling-panel-body">' + body + '</div>';

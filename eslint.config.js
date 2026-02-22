@@ -2,6 +2,7 @@ const js = require('@eslint/js');
 const globals = require('globals');
 
 module.exports = [
+  { ignores: ['test/e2e/.venv/**'] },
   js.configs.recommended,
   {
     rules: {

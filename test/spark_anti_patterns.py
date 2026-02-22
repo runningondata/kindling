@@ -25,15 +25,22 @@
 # MAGIC | 10 | Dominant Stage | Jobs page |
 # MAGIC | 11 | Executor Imbalance | Executors page |
 # MAGIC | 12 | Straggler Tasks | Stage detail (while running) |
+# MAGIC | 13 | Long Filter Condition | SQL detail |
+# MAGIC | 14 | Small Files | SQL detail |
+# MAGIC | 15 | PII Column Names | SQL detail |
+# MAGIC | 16 | Estimation Error | SQL detail |
+# MAGIC | 17 | Memory Utilisation | Executors page |
+# MAGIC | 18 | Failed Query | SQL list / SQL detail |
 # MAGIC
 # MAGIC ### Notes
 # MAGIC - Cell 12 (stragglers) sleeps for 120 s — check the active stage detail page while it runs
+# MAGIC - Cell 18 (failed query) intentionally throws an error
 # MAGIC - Some checks depend on cluster sizing; thresholds may need adjustment on large clusters
 
 # COMMAND ----------
 
 from pyspark.sql import functions as F
-from pyspark.sql.types import DoubleType
+from pyspark.sql.types import DoubleType, StructType, StructField, StringType, IntegerType
 import time
 
 original_shuffle_partitions = spark.conf.get("spark.sql.shuffle.partitions")
@@ -222,11 +229,129 @@ straggler_rdd.mapPartitionsWithIndex(straggler_fn).count()
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Cell 13 — Long Filter Condition
+# MAGIC A filter with many OR predicates. Kindling flags filters exceeding 500 characters
+# MAGIC or 10 predicates (configurable thresholds).
+
+# COMMAND ----------
+
+long_filter_df = spark.range(1_000_000).withColumn("category", (F.col("id") % 100).cast("int"))
+long_filter_df.write.mode("overwrite").parquet(f"{TEMP_PATH}/long_filter_test")
+
+conditions = " OR ".join([f"(category = {i} AND id > {i * 1000})" for i in range(25)])
+spark.read.parquet(f"{TEMP_PATH}/long_filter_test").filter(conditions).count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 14 — Small Files
+# MAGIC Write 500 tiny parquet files then read them back. Kindling flags scans where
+# MAGIC average file size < 32 MB with 100+ files.
+
+# COMMAND ----------
+
+small_files_df = spark.range(5000).withColumn("key", (F.col("id") % 500).cast("int"))
+small_files_df.repartition(500).write.mode("overwrite").parquet(f"{TEMP_PATH}/small_files_test")
+
+spark.read.parquet(f"{TEMP_PATH}/small_files_test").filter("id > 100").count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 15 — PII Column Names
+# MAGIC Uses column names like `email`, `phone`, `ssn` that Kindling flags as potential PII
+# MAGIC in the SQL physical plan text.
+
+# COMMAND ----------
+
+schema = StructType([
+    StructField("customer_id", IntegerType()),
+    StructField("email", StringType()),
+    StructField("phone", StringType()),
+    StructField("ssn", StringType()),
+    StructField("first_name", StringType()),
+    StructField("last_name", StringType()),
+    StructField("address", StringType()),
+])
+pii_df = spark.createDataFrame([
+    (1, "user@example.com", "555-123-4567", "123-45-6789", "Jane", "Doe", "123 Main St"),
+    (2, "other@test.com", "555-987-6543", "987-65-4321", "John", "Smith", "456 Oak Ave"),
+], schema)
+pii_df.write.mode("overwrite").parquet(f"{TEMP_PATH}/pii_test")
+
+spark.read.parquet(f"{TEMP_PATH}/pii_test").filter("customer_id > 0").count()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 16 — Estimation Error
+# MAGIC Deliberately creates stale statistics by writing new data after ANALYZE TABLE.
+# MAGIC The physical plan should show a large estimation multiplier (e.g. `(100X)`).
+# MAGIC
+# MAGIC **Note:** This may not always trigger depending on DBR version and whether
+# MAGIC the Spark UI shows estimation error multipliers in the plan text.
+
+# COMMAND ----------
+
+est_df = spark.range(100).withColumn("key", F.lit(1))
+est_df.write.mode("overwrite").saveAsTable("kindling_est_test")
+spark.sql("ANALYZE TABLE kindling_est_test COMPUTE STATISTICS FOR ALL COLUMNS")
+
+spark.range(1_000_000).withColumn("key", F.lit(1)).write.mode("append").saveAsTable("kindling_est_test")
+
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")
+spark.table("kindling_est_test").join(
+    spark.table("kindling_est_test").withColumnRenamed("id", "id2"), "key"
+).count()
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", original_broadcast_threshold)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 17 — Memory Utilisation
+# MAGIC Caches a large DataFrame to push executor storage memory usage up.
+# MAGIC Check the Executors page for the memory utilisation column.
+
+# COMMAND ----------
+
+mem_df = (
+    spark.range(10_000_000)
+    .withColumn("payload", F.concat(F.lit("cached_"), F.col("id").cast("string"), F.lit("_" * 100)))
+)
+mem_df.cache()
+mem_df.count()
+
+# Check executors page, then unpersist
+print("Check the Executors page now. Run the next cell to unpersist.")
+
+# COMMAND ----------
+
+mem_df.unpersist()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 18 — Failed Query
+# MAGIC Intentionally runs a query that will fail. Check the SQL list page for the
+# MAGIC failed query row, and the SQL detail page for the error message.
+
+# COMMAND ----------
+
+try:
+    spark.sql("SELECT * FROM nonexistent_table_kindling_test").count()
+except Exception as e:
+    print(f"Expected failure: {e}")
+    print("Check the SQL / DataFrame tab for the failed query entry.")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Cleanup
 
 # COMMAND ----------
 
 dbutils.fs.rm(TEMP_PATH, recurse=True)
+spark.sql("DROP TABLE IF EXISTS kindling_est_test")
 spark.conf.set("spark.sql.shuffle.partitions", original_shuffle_partitions)
 spark.conf.set("spark.sql.autoBroadcastJoinThreshold", original_broadcast_threshold)
 print("Cleanup complete.")
