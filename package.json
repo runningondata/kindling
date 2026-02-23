@@ -10,7 +10,7 @@
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
     "lint": "eslint src/ test/ esbuild.config.js eslint.config.js scripts/",
-    "test": "node test/detection.test.js && node test/stage-checkers.test.js && node test/sql-checkers.test.js && node test/executor-checkers.test.js && node test/panel.test.js && node test/config.test.js",
+    "test": "node test/detection.test.js && node test/stage-checkers.test.js && node test/sql-checkers.test.js && node test/sql-data-checkers.test.js && node test/executor-checkers.test.js && node test/panel.test.js && node test/config.test.js",
     "test:e2e": "npm run build && cd test/e2e && uv run playwright install chromium --with-deps && uv run pytest -v",
     "build:firefox": "node scripts/build-firefox.js",
     "package": "npm run build && npm run build:firefox && node scripts/package.js"
