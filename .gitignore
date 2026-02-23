@@ -7,3 +7,7 @@ dist/
 extension/content/kindling.js
 extension/popup/popup.js
 extension/options/options.js
+
+# Python bytecode
+__pycache__/
+*.pyc
