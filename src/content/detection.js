@@ -62,7 +62,7 @@ export function getPageType() {
   if (/\/executors\/?$/.test(path)) {
     return 'executors';
   }
-  if (/\/$/.test(path) || path.endsWith(':4040') || path.endsWith(':18080')) {
+  if (/\/$/.test(path)) {
     return 'jobs-list';
   }
   return 'unknown';

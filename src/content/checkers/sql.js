@@ -156,7 +156,8 @@ export function checkLongFilters(savedOriginals, config, addIssue) {
                    predicateCount > config.longFilterPredicateThreshold;
     if (!isLong) continue;
 
-    const severity = (charLen > 1000 || predicateCount > 20)
+    const severity = (charLen > config.longFilterCharThreshold * 2 ||
+                      predicateCount > config.longFilterPredicateThreshold * 2)
       ? SEVERITY.WARNING
       : SEVERITY.INFO;
 
@@ -332,7 +333,7 @@ export function checkSmallFiles(savedOriginals, config, addIssue) {
   const avgSizeMb = avgSize / 1048576;
 
   if (avgSizeMb < config.smallFileAvgSizeWarningMb) {
-    const severity = avgSizeMb < config.smallFileAvgSizeCriticalMb ? SEVERITY.WARNING : SEVERITY.INFO;
+    const severity = avgSizeMb < config.smallFileAvgSizeCriticalMb ? SEVERITY.CRITICAL : SEVERITY.WARNING;
     const avgStr = formatBytesHuman(avgSize);
 
     addIssue(severity, 'Small Files',
