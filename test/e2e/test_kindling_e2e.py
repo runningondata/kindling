@@ -245,6 +245,7 @@ def test_non_spark_page(spark, page):
 
 
 def test_panel_rendered(spark, page, spark_ui_url):
+    run_skew(spark)
     goto_stage_detail(page, spark_ui_url)
     inject_kindling(page)
     run_analysis(page)

@@ -152,7 +152,7 @@ def run_python_udf(spark: SparkSession):
 
     spark.range(100_000).withColumn("value", F.rand()).withColumn(
         "doubled", slow_udf(F.col("value"))
-    ).count()
+    ).agg(F.sum("doubled")).collect()
 
 
 def run_wide_schema(spark: SparkSession):
@@ -165,7 +165,9 @@ def run_wide_schema(spark: SparkSession):
         df = df.withColumn(f"col_{i}", (F.col("id") + i).cast("string"))
     df.write.mode("overwrite").parquet(parquet_path)
 
-    spark.read.parquet(parquet_path).filter(F.col("col_0") > "5000").count()
+    # Read ALL columns (SELECT *) to trigger the wide schema detection
+    wide_df = spark.read.parquet(parquet_path)
+    wide_df.select([F.col(f"col_{i}") for i in range(30)]).limit(10).collect()
 
 
 def run_failed_stage(spark: SparkSession):
@@ -175,6 +177,7 @@ def run_failed_stage(spark: SparkSession):
         raise RuntimeError("intentional failure for kindling test")
 
     try:
-        spark.range(100).withColumn("boom", fail_udf(F.col("id"))).count()
+        # Use collect() to force UDF evaluation — count() optimizes away columns
+        spark.range(100).withColumn("boom", fail_udf(F.col("id"))).collect()
     except Exception:
         pass  # The job fails, but stages are recorded in the UI

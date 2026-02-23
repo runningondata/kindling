@@ -5,6 +5,7 @@ and provides helpers to inject Kindling into any page.
 """
 
 import json
+import os
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -51,6 +52,8 @@ def spark():
         .config("spark.driver.memory", "2g")
         # AQE coalesces shuffle partitions, hiding anti-patterns like skew
         .config("spark.sql.adaptive.enabled", "false")
+        # Prevent plan truncation so wide-schema ReadSchema is visible
+        .config("spark.sql.debug.maxToStringFields", "200")
         .getOrCreate()
     )
     yield session
@@ -67,7 +70,11 @@ def spark_ui_url(spark):
 @pytest.fixture(scope="session")
 def browser():
     pw = sync_playwright().start()
-    b = pw.chromium.launch(headless=True)
+    launch_opts = {"headless": True}
+    chromium_path = os.environ.get("KINDLING_CHROMIUM_PATH")
+    if chromium_path:
+        launch_opts["executable_path"] = chromium_path
+    b = pw.chromium.launch(**launch_opts)
     yield b
     b.close()
     pw.stop()
