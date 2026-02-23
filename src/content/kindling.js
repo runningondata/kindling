@@ -2,9 +2,9 @@ import { DEFAULT_CONFIG, SEVERITY } from './config.js';
 import { detectSparkUI, getPageType } from './detection.js';
 import { parseSummaryMetrics } from './tables.js';
 import { clearHighlights } from './dom.js';
-import { checkSkew, checkSpill, checkGCPressure, checkStragglers, checkSmallTasks } from './checkers/stage.js';
-import { checkJoinStrategies, checkPredicatePushdown, checkLongFilters, checkSmallFiles, checkPiiPatterns, checkEstimationErrors, checkFailedQueries } from './checkers/sql.js';
-import { checkLongRunningStages, addStageBadges } from './checkers/jobs.js';
+import { checkSkew, checkSpill, checkGCPressure, checkStragglers, checkSmallTasks, checkShuffleWrite } from './checkers/stage.js';
+import { checkJoinStrategies, checkPredicatePushdown, checkLongFilters, checkSmallFiles, checkPiiPatterns, checkEstimationErrors, checkFailedQueries, checkPythonUDFs, checkColumnUsage } from './checkers/sql.js';
+import { checkLongRunningStages, checkFailedStages, addStageBadges } from './checkers/jobs.js';
 import { checkExecutorBalance, checkMemoryUtilisation } from './checkers/executors.js';
 import { setupSqlHighlighting } from './sql-highlighting.js';
 import { buildPanel } from './panel.js';
@@ -47,6 +47,7 @@ if (!window.__kindlingSetup) {
           checkGCPressure(metrics, config, addIssue);
           checkStragglers(config, addIssue);
           checkSmallTasks(metrics, config, addIssue);
+          checkShuffleWrite(metrics, config, addIssue);
           break;
         }
         case 'stages-list': {
@@ -60,6 +61,8 @@ if (!window.__kindlingSetup) {
           checkSmallFiles(savedOriginals, config, addIssue);
           checkPiiPatterns(savedOriginals, addIssue);
           checkEstimationErrors(config, addIssue);
+          checkPythonUDFs(savedOriginals, addIssue);
+          checkColumnUsage(savedOriginals, config, addIssue);
           setupSqlHighlighting(savedOriginals);
           checkFailedQueries(pageType, addIssue);
           break;
@@ -71,6 +74,7 @@ if (!window.__kindlingSetup) {
         case 'jobs-list':
         case 'job-detail': {
           checkLongRunningStages(config, addIssue);
+          checkFailedStages(addIssue);
           break;
         }
         case 'executors': {

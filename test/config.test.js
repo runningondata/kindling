@@ -47,6 +47,8 @@ test('New config thresholds have sensible defaults', () => {
     'longFilterPredicateThreshold',
     'estimationErrorWarning',
     'estimationErrorCritical',
+    'shuffleWriteWarningGib',
+    'wideSchemaColumnThreshold',
   ];
   requiredKeys.forEach(key => {
     assert(configSource.includes(key),
@@ -69,6 +71,8 @@ test('Options HTML has inputs for all new thresholds', () => {
     'longFilterPredicateThreshold',
     'estimationErrorWarning',
     'estimationErrorCritical',
+    'shuffleWriteWarningGib',
+    'wideSchemaColumnThreshold',
   ];
   requiredIds.forEach(id => {
     assert(optionsHtml.includes('id="' + id + '"'),

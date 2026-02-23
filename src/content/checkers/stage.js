@@ -158,6 +158,33 @@ export function checkStragglers(config, addIssue) {
   }
 }
 
+export function checkShuffleWrite(metrics, config, addIssue) {
+  if (!metrics) return;
+
+  const sw = metrics['Shuffle Write Size'] || metrics['Shuffle Write'] ||
+             metrics['Shuffle Bytes Written'];
+  if (!sw) return;
+
+  const max = sw.max;
+  if (isNaN(max) || max === 0) return;
+
+  const thresholdBytes = config.shuffleWriteWarningGib * ONE_GIB;
+  if (max > thresholdBytes) {
+    const maxText = cellText(sw.cells[5]);
+    highlightRow(sw.row, SEVERITY.WARNING,
+      'Heavy shuffle write (max: ' + maxText + ').\n' +
+      'Large shuffles move data across the network and can bottleneck stages.\n' +
+      'Fix: Reduce partition count, use broadcast joins, or pre-partition data.');
+    highlightCell(sw.cells[5], SEVERITY.WARNING,
+      'Shuffle write: ' + maxText);
+    addIssue(SEVERITY.WARNING, 'Shuffle Write',
+      'Heavy shuffle write detected — max: ' + maxText +
+      '. Large shuffles move data across the network and can bottleneck stages. ' +
+      'Consider broadcast joins, pre-partitioning, or reducing shuffle partitions.',
+      sw.row);
+  }
+}
+
 export function checkSmallTasks(metrics, config, addIssue) {
   if (!metrics) return;
   const d = metrics['Duration'];

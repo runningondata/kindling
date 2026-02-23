@@ -400,4 +400,116 @@ test('Does not flag small estimation errors', () => {
   assertNotContainsCategory(result, 'Estimation Error');
 });
 
+// --- Python UDF Detection ---
+
+console.log('--- Python UDF Detection ---');
+
+test('Detects BatchEvalPython (regular Python UDF)', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=50',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- BatchEvalPython [my_udf(col1#1)], [pythonUDF0#5]
+   +- FileScan parquet [col1] PushedFilters: [] ReadSchema: struct<col1:string>
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Python UDF');
+  assertMinSeverity(result, 'warning', 1);
+  assertMessageContains(result, 'BatchEvalPython');
+});
+
+test('Detects ArrowEvalPython (Pandas UDF)', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=51',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- ArrowEvalPython [pandas_udf(col1#1)], [pythonUDF0#5]
+   +- FileScan parquet [col1] PushedFilters: [] ReadSchema: struct<col1:string>
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Python UDF');
+  assertMinSeverity(result, 'warning', 1);
+  assertMessageContains(result, 'ArrowEvalPython');
+});
+
+test('Detects FlatMapGroupsInPandas', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=52',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- FlatMapGroupsInPandas [group_key#1], [output#5]
+   +- Sort [group_key#1 ASC]
+      +- Exchange hashpartitioning(group_key#1)
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Python UDF');
+  assertMessageContains(result, 'grouped map');
+});
+
+test('Does not flag plans without Python UDFs', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=53',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- BroadcastHashJoin [key#1], [key#2]
+   :- FileScan parquet [key, value] PushedFilters: [IsNotNull(key)] ReadSchema: struct<key:int,value:string>
+   +- FileScan parquet [key, name] PushedFilters: [IsNotNull(key)] ReadSchema: struct<key:int,name:string>
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertNotContainsCategory(result, 'Python UDF');
+});
+
+// --- Column Usage Detection ---
+
+console.log('--- Column Usage Detection ---');
+
+test('Detects wide schema scan', () => {
+  const cols = Array.from({ length: 25 }, (_, i) => 'col' + i + ':string').join(',');
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=60',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- Project [col0#1, col1#2]
+   +- FileScan parquet [col0, col1, col2, col3] PushedFilters: [] ReadSchema: struct&lt;${cols}&gt;
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Column Usage');
+  assertMessageContains(result, '25 columns');
+});
+
+test('Does not flag narrow schema scan', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/SQL/execution/?id=61',
+    bodyHtml: `
+      <div id="physical-plan-details">
+        <pre>
++- FileScan parquet [id, name, value] PushedFilters: [IsNotNull(id)] ReadSchema: struct&lt;id:bigint,name:string,value:double&gt;
+        </pre>
+      </div>
+    `,
+  });
+  const result = runKindling(dom);
+  assertNotContainsCategory(result, 'Column Usage');
+});
+
 process.exit(printResults());

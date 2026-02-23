@@ -88,4 +88,43 @@ test('Detects high GC pressure', () => {
   assertMinSeverity(result, 'critical', 1);
 });
 
+// --- Shuffle Write Detection ---
+
+console.log('--- Shuffle Write Detection ---');
+
+test('Detects heavy shuffle write', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/stages/stage/?id=0&attempt=0',
+    bodyHtml: `
+      <table id="summary-metrics-table">
+        <thead><tr><th>Metric</th><th>Min</th><th>25th percentile</th><th>Median</th><th>75th percentile</th><th>Max</th></tr></thead>
+        <tbody>
+          <tr><td>Duration</td><td>5 s</td><td>10 s</td><td>15 s</td><td>20 s</td><td>25 s</td></tr>
+          <tr><td>Shuffle Write Size</td><td>100 MiB</td><td>500 MiB</td><td>800 MiB</td><td>1.5 GiB</td><td>3.0 GiB</td></tr>
+        </tbody>
+      </table>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Shuffle Write');
+  assertMinSeverity(result, 'warning', 1);
+});
+
+test('Does not flag small shuffle writes', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/stages/stage/?id=0&attempt=0',
+    bodyHtml: `
+      <table id="summary-metrics-table">
+        <thead><tr><th>Metric</th><th>Min</th><th>25th percentile</th><th>Median</th><th>75th percentile</th><th>Max</th></tr></thead>
+        <tbody>
+          <tr><td>Duration</td><td>5 s</td><td>10 s</td><td>15 s</td><td>20 s</td><td>25 s</td></tr>
+          <tr><td>Shuffle Write Size</td><td>10 MiB</td><td>50 MiB</td><td>100 MiB</td><td>200 MiB</td><td>500 MiB</td></tr>
+        </tbody>
+      </table>
+    `,
+  });
+  const result = runKindling(dom);
+  assertNotContainsCategory(result, 'Shuffle Write');
+});
+
 process.exit(printResults());

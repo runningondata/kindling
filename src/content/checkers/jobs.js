@@ -43,6 +43,29 @@ export function checkLongRunningStages(config, addIssue) {
   });
 }
 
+export function checkFailedStages(addIssue) {
+  const failedTable = findTable('failedStage-table');
+  if (!failedTable) return;
+
+  const rows = getDataRows(failedTable);
+  if (rows.length === 0) return;
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const stageId = cells.length > 0 ? cellText(cells[0]).trim() : 'unknown';
+    const desc = cells.length > 1 ? cellText(cells[1]).trim() : '';
+    const shortDesc = desc.length > 80 ? desc.substring(0, 80) + '...' : desc;
+
+    highlightRow(row, SEVERITY.CRITICAL,
+      'Stage ' + stageId + ' has failed.\nCheck stage detail page for error information.');
+
+    const label = shortDesc ? 'Stage ' + stageId + ' — "' + shortDesc + '"' : 'Stage ' + stageId;
+    addIssue(SEVERITY.CRITICAL, 'Failed Stage',
+      'Failed stage: ' + label + '. Check the stage detail page for error details and stack traces.',
+      row);
+  });
+}
+
 export function addStageBadges(config) {
   const tableIds = [
     'activeStage-table', 'completedStage-table',

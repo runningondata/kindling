@@ -16,6 +16,8 @@ export const DEFAULT_CONFIG = {
   longFilterPredicateThreshold: 10,
   estimationErrorWarning: 100,
   estimationErrorCritical: 1000,
+  shuffleWriteWarningGib: 1,
+  wideSchemaColumnThreshold: 20,
 };
 
 export const SEVERITY = {

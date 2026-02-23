@@ -410,6 +410,84 @@ export function checkPiiPatterns(savedOriginals, addIssue) {
   });
 }
 
+// ---- Column usage / wide schema detection (SQL detail page) ----
+
+export function checkColumnUsage(savedOriginals, config, addIssue) {
+  const planContainer = document.getElementById('physical-plan-details');
+  if (!planContainer) return;
+
+  const planText = savedOriginals['plan-pre']
+    ? savedOriginals['plan-pre'].text
+    : (planContainer.textContent || '');
+  if (!planText.trim()) return;
+
+  // Match ReadSchema from FileScan lines: ReadSchema: struct<col1:type,col2:type,...>
+  const schemaPattern = /ReadSchema:\s*struct<([^>]+)>/g;
+  let match;
+
+  while ((match = schemaPattern.exec(planText)) !== null) {
+    const schemaBody = match[1];
+    // Count fields by splitting on commas that are not inside nested angle brackets
+    let depth = 0;
+    let fieldCount = 1;
+    for (let i = 0; i < schemaBody.length; i++) {
+      if (schemaBody[i] === '<') depth++;
+      else if (schemaBody[i] === '>') depth--;
+      else if (schemaBody[i] === ',' && depth === 0) fieldCount++;
+    }
+
+    if (fieldCount >= config.wideSchemaColumnThreshold) {
+      addIssue(SEVERITY.INFO, 'Column Usage',
+        'Scan reading ' + fieldCount + ' columns (threshold: ' +
+        config.wideSchemaColumnThreshold + '). ' +
+        'Wide schemas increase I/O and memory usage. Consider selecting only the columns ' +
+        'you need instead of SELECT *.');
+    }
+  }
+
+  // Also check for output column lists in scan operators: FileScan parquet [col1, col2, ...]
+  const scanColPattern = /(?:FileScan|Scan)\s+\w+[^[]*\[([^\]]+)\]/g;
+  while ((match = scanColPattern.exec(planText)) !== null) {
+    const cols = match[1].split(',');
+    if (cols.length >= config.wideSchemaColumnThreshold) {
+      // Avoid duplicate if ReadSchema already flagged
+      const alreadyFlagged = (planText.indexOf('ReadSchema:') !== -1);
+      if (!alreadyFlagged) {
+        addIssue(SEVERITY.INFO, 'Column Usage',
+          'Scan outputs ' + cols.length + ' columns. ' +
+          'Wide output suggests a possible SELECT *. Consider explicit column selection.');
+      }
+    }
+  }
+}
+
+// ---- Python UDF detection (SQL detail page) ----
+
+const PYTHON_UDF_PATTERNS = [
+  { pattern: /\bBatchEvalPython\b/, label: 'Python UDF (BatchEvalPython)', tip: 'Regular Python UDFs serialise data row-by-row between JVM and Python. Consider replacing with Spark built-in functions or Pandas UDFs for better performance.' },
+  { pattern: /\bArrowEvalPython\b/, label: 'Pandas UDF (ArrowEvalPython)', tip: 'Pandas UDFs use Arrow for vectorised transfer but still cross the JVM/Python boundary. Consider replacing with native Spark functions if possible.' },
+  { pattern: /\bFlatMapGroupsInPandas\b/, label: 'Pandas grouped map UDF', tip: 'groupBy().applyInPandas() requires full group materialisation in Python. Watch for memory pressure on large groups.' },
+  { pattern: /\bMapInPandas\b/, label: 'mapInPandas UDF', tip: 'mapInPandas processes batches in Python. Consider native Spark functions for better performance.' },
+  { pattern: /\bFlatMapCoGroupsInPandas\b/, label: 'Pandas cogroup UDF', tip: 'CoGrouped Pandas operations materialise both sides in Python. Watch for memory pressure.' },
+];
+
+export function checkPythonUDFs(savedOriginals, addIssue) {
+  const planContainer = document.getElementById('physical-plan-details');
+  if (!planContainer) return;
+
+  const planText = savedOriginals['plan-pre']
+    ? savedOriginals['plan-pre'].text
+    : (planContainer.textContent || '');
+  if (!planText.trim()) return;
+
+  PYTHON_UDF_PATTERNS.forEach(entry => {
+    if (entry.pattern.test(planText)) {
+      addIssue(SEVERITY.WARNING, 'Python UDF',
+        entry.label + ' detected in query plan. ' + entry.tip);
+    }
+  });
+}
+
 // ---- Estimation error detection (SQL detail page) ----
 
 export function checkEstimationErrors(config, addIssue) {

@@ -213,7 +213,7 @@
     <div class="field">
       <label>
         Avg. file size warning (MB)
-        <span class="desc">Flag scan as info when average file size is below this (MB)</span>
+        <span class="desc">Flag scan as warning when average file size is below this (MB)</span>
       </label>
       <input type="number" id="smallFileAvgSizeWarningMb" step="1" min="1">
     </div>
@@ -221,7 +221,7 @@
     <div class="field">
       <label>
         Avg. file size critical (MB)
-        <span class="desc">Flag scan as warning when average file size is below this (MB)</span>
+        <span class="desc">Flag scan as critical when average file size is below this (MB)</span>
       </label>
       <input type="number" id="smallFileAvgSizeCriticalMb" step="0.1" min="0.1">
     </div>
@@ -268,6 +268,26 @@
         <span class="desc">Critical alert for estimation errors above this multiplier</span>
       </label>
       <input type="number" id="estimationErrorCritical" step="100" min="100">
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Shuffle &amp; Columns</legend>
+
+    <div class="field">
+      <label>
+        Shuffle write warning (GiB)
+        <span class="desc">Flag shuffle write when max exceeds this size in GiB</span>
+      </label>
+      <input type="number" id="shuffleWriteWarningGib" step="0.5" min="0.1">
+    </div>
+
+    <div class="field">
+      <label>
+        Wide schema column threshold
+        <span class="desc">Flag scans reading more columns than this (potential SELECT *)</span>
+      </label>
+      <input type="number" id="wideSchemaColumnThreshold" step="5" min="5">
     </div>
   </fieldset>
 
