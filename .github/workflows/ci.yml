@@ -7,6 +7,21 @@ on:
     branches: [main]
 
 jobs:
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check dependency licenses
+        run: npx license-checker-rseidelsohn --onlyAllow 'MIT;MIT-0;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;Python-2.0;BlueOak-1.0.0;CC0-1.0;0BSD;Unlicense;CC-BY-3.0;CC-BY-4.0' --excludePackages 'kindling@1.0.0'
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
