@@ -3,7 +3,9 @@
 import pytest
 
 from conftest import (
+    get_latest_failed_job_id,
     get_stage_with_shuffle_read,
+    get_stage_with_shuffle_write,
     goto_job_detail,
     goto_sql_detail,
     goto_stage_detail,
@@ -14,12 +16,16 @@ from workloads import (
     run_broadcast_nested_loop,
     run_cartesian,
     run_dominant_stage,
+    run_failed_stage,
     run_gc_pressure,
     run_missing_pushdown,
+    run_python_udf,
+    run_shuffle_write,
     run_skew,
     run_small_tasks,
     run_sort_merge_join,
     run_spill,
+    run_wide_schema,
 )
 
 
@@ -84,6 +90,19 @@ def test_small_tasks(spark, page, spark_ui_url):
     _assert_detected(result, "Small Tasks")
 
 
+@pytest.mark.skip(
+    reason="Local mode shuffle writes may not exceed 1 GiB threshold"
+)
+def test_shuffle_write(spark, page, spark_ui_url):
+    run_shuffle_write(spark)
+    stage_id = get_stage_with_shuffle_write(spark_ui_url)
+    goto_stage_detail(page, spark_ui_url, stage_id=stage_id)
+    inject_kindling(page)
+    result = run_analysis(page)
+
+    _assert_detected(result, "Shuffle Write")
+
+
 # ---------------------------------------------------------------------------
 # SQL detail page tests
 # ---------------------------------------------------------------------------
@@ -138,6 +157,32 @@ def test_missing_pushdown(spark, page, spark_ui_url):
     assert any(i["category"] == "Predicate Pushdown" for i in result["issues"])
 
 
+def test_python_udf(spark, page, spark_ui_url):
+    run_python_udf(spark)
+    goto_sql_detail(page, spark_ui_url)
+    inject_kindling(page)
+    result = run_analysis(page)
+
+    _assert_detected(result, "Python UDF")
+    udf_issues = [i for i in result["issues"] if i["category"] == "Python UDF"]
+    assert any("BatchEvalPython" in i["message"] for i in udf_issues), (
+        f"Expected BatchEvalPython in messages, got: {[i['message'] for i in udf_issues]}"
+    )
+
+
+def test_wide_schema(spark, page, spark_ui_url):
+    run_wide_schema(spark)
+    goto_sql_detail(page, spark_ui_url)
+    inject_kindling(page)
+    result = run_analysis(page)
+
+    _assert_detected(result, "Column Usage")
+    col_issues = [i for i in result["issues"] if i["category"] == "Column Usage"]
+    assert any("columns" in i["message"] for i in col_issues), (
+        f"Expected 'columns' in messages, got: {[i['message'] for i in col_issues]}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Job detail page tests
 # ---------------------------------------------------------------------------
@@ -153,6 +198,17 @@ def test_dominant_stage(spark, page, spark_ui_url):
     result = run_analysis(page)
 
     _assert_detected(result, "Dominant Stage")
+
+
+def test_failed_stage(spark, page, spark_ui_url):
+    run_failed_stage(spark)
+    job_id = get_latest_failed_job_id(spark_ui_url)
+    assert job_id is not None, "Expected a failed job after run_failed_stage"
+    goto_job_detail(page, spark_ui_url, job_id=job_id)
+    inject_kindling(page)
+    result = run_analysis(page)
+
+    _assert_detected(result, "Failed Stage")
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +245,7 @@ def test_non_spark_page(spark, page):
 
 
 def test_panel_rendered(spark, page, spark_ui_url):
+    run_skew(spark)
     goto_stage_detail(page, spark_ui_url)
     inject_kindling(page)
     run_analysis(page)

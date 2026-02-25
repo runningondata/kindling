@@ -5,6 +5,7 @@ and provides helpers to inject Kindling into any page.
 """
 
 import json
+import os
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -51,6 +52,8 @@ def spark():
         .config("spark.driver.memory", "2g")
         # AQE coalesces shuffle partitions, hiding anti-patterns like skew
         .config("spark.sql.adaptive.enabled", "false")
+        # Prevent plan truncation so wide-schema ReadSchema is visible
+        .config("spark.sql.debug.maxToStringFields", "200")
         .getOrCreate()
     )
     yield session
@@ -67,7 +70,11 @@ def spark_ui_url(spark):
 @pytest.fixture(scope="session")
 def browser():
     pw = sync_playwright().start()
-    b = pw.chromium.launch(headless=True)
+    launch_opts = {"headless": True}
+    chromium_path = os.environ.get("KINDLING_CHROMIUM_PATH")
+    if chromium_path:
+        launch_opts["executable_path"] = chromium_path
+    b = pw.chromium.launch(**launch_opts)
     yield b
     b.close()
     pw.stop()
@@ -148,6 +155,29 @@ def get_stage_with_shuffle_read(spark_ui_url: str) -> int:
     return _latest_job_stages(spark_ui_url)[0]["stageId"]
 
 
+def get_stage_with_shuffle_write(spark_ui_url: str) -> int:
+    """Return a stage from the latest job that has shuffle writes."""
+    aid = _app_id(spark_ui_url)
+    for s in _latest_job_stages(spark_ui_url):
+        detail = _api_get(
+            f"{spark_ui_url}/api/v1/applications/{aid}/stages/{s['stageId']}/0"
+        )
+        if detail.get("shuffleWriteBytes", 0) > 0:
+            return s["stageId"]
+    return _latest_job_stages(spark_ui_url)[0]["stageId"]
+
+
+def get_latest_failed_job_id(spark_ui_url: str):
+    """Return the ID of the most recent failed job, or None if no failures."""
+    aid = _app_id(spark_ui_url)
+    jobs = _api_get(f"{spark_ui_url}/api/v1/applications/{aid}/jobs")
+    failed = [j for j in jobs if j.get("status") == "FAILED"]
+    if not failed:
+        return None
+    failed.sort(key=lambda j: j["submissionTime"], reverse=True)
+    return failed[0]["jobId"]
+
+
 def get_latest_sql_id(spark_ui_url: str) -> int:
     """Return the ID of the most recent SQL execution."""
     aid = _app_id(spark_ui_url)
@@ -196,8 +226,12 @@ def goto_sql_detail(page, spark_ui_url: str):
             )
 
 
-def goto_job_detail(page, spark_ui_url: str):
-    """Navigate to the latest job detail and wait for stage tables."""
-    job_id = get_latest_job_id(spark_ui_url)
+def goto_job_detail(page, spark_ui_url: str, job_id: int | None = None):
+    """Navigate to a job detail page and wait for stage tables."""
+    if job_id is None:
+        job_id = get_latest_job_id(spark_ui_url)
     page.goto(f"{spark_ui_url}/jobs/job/?id={job_id}")
-    page.wait_for_selector("#completedStage-table tbody tr")
+    # Wait for either completed or failed stage tables
+    page.wait_for_selector(
+        "#completedStage-table tbody tr, #failedStage-table tbody tr"
+    )

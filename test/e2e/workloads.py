@@ -7,7 +7,7 @@ import tempfile
 import os
 
 from pyspark.sql import SparkSession, functions as F
-from pyspark.sql.types import DoubleType
+from pyspark.sql.types import DoubleType, StructType, StructField, StringType
 
 
 def run_skew(spark: SparkSession):
@@ -122,3 +122,62 @@ def run_dominant_stage(spark: SparkSession):
         F.count("*").alias("cnt"),
         F.collect_list("payload").alias("payloads"),
     ).count()
+
+
+def run_shuffle_write(spark: SparkSession):
+    """Equi-join with broadcast disabled on large data — heavy shuffle writes."""
+    original = spark.conf.get("spark.sql.autoBroadcastJoinThreshold")
+    spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")
+    try:
+        left = (
+            spark.range(2_000_000)
+            .withColumn("key", (F.col("id") % 500).cast("int"))
+            .withColumn("payload", F.concat(F.lit("x" * 100), F.col("id").cast("string")))
+        )
+        right = (
+            spark.range(2_000_000)
+            .withColumn("key", (F.col("id") % 500).cast("int"))
+            .withColumn("data", F.concat(F.lit("y" * 100), F.col("id").cast("string")))
+        )
+        left.join(right, "key").count()
+    finally:
+        spark.conf.set("spark.sql.autoBroadcastJoinThreshold", original)
+
+
+def run_python_udf(spark: SparkSession):
+    """Python UDF in a query — triggers Python UDF detection on SQL detail."""
+    @F.udf(DoubleType())
+    def slow_udf(x):
+        return x * 2.0 if x is not None else 0.0
+
+    spark.range(100_000).withColumn("value", F.rand()).withColumn(
+        "doubled", slow_udf(F.col("value"))
+    ).agg(F.sum("doubled")).collect()
+
+
+def run_wide_schema(spark: SparkSession):
+    """Write and read a parquet table with 30 columns — triggers Column Usage."""
+    tmp_dir = tempfile.mkdtemp(prefix="kindling_wide_")
+    parquet_path = os.path.join(tmp_dir, "wide_table")
+
+    df = spark.range(10_000)
+    for i in range(30):
+        df = df.withColumn(f"col_{i}", (F.col("id") + i).cast("string"))
+    df.write.mode("overwrite").parquet(parquet_path)
+
+    # Read ALL columns (SELECT *) to trigger the wide schema detection
+    wide_df = spark.read.parquet(parquet_path)
+    wide_df.select([F.col(f"col_{i}") for i in range(30)]).limit(10).collect()
+
+
+def run_failed_stage(spark: SparkSession):
+    """Intentionally fail a stage via a UDF that raises — triggers Failed Stage."""
+    @F.udf(StringType())
+    def fail_udf(x):
+        raise RuntimeError("intentional failure for kindling test")
+
+    try:
+        # Use collect() to force UDF evaluation — count() optimizes away columns
+        spark.range(100).withColumn("boom", fail_udf(F.col("id"))).collect()
+    except Exception:
+        pass  # The job fails, but stages are recorded in the UI

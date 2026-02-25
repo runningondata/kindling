@@ -1,5 +1,5 @@
 import { SEVERITY } from '../config.js';
-import { parseBytes, cellText, formatBytesHuman } from '../parsers.js';
+import { cellText } from '../parsers.js';
 import { escapeHtml } from '../utils.js';
 import { highlightElement, highlightRow } from '../dom.js';
 import { findColumnIndex, getDataRows } from '../tables.js';
@@ -156,7 +156,8 @@ export function checkLongFilters(savedOriginals, config, addIssue) {
                    predicateCount > config.longFilterPredicateThreshold;
     if (!isLong) continue;
 
-    const severity = (charLen > 1000 || predicateCount > 20)
+    const severity = (charLen > config.longFilterCharThreshold * 2 ||
+                      predicateCount > config.longFilterPredicateThreshold * 2)
       ? SEVERITY.WARNING
       : SEVERITY.INFO;
 
@@ -275,138 +276,6 @@ function checkFailedQueriesOnDetail(addIssue) {
 export function checkFailedQueries(pageType, addIssue) {
   if (pageType === 'sql-list') checkFailedQueriesOnList(addIssue);
   if (pageType === 'sql-detail') checkFailedQueriesOnDetail(addIssue);
-}
-
-// ---- Small files reading detection (SQL detail page) ----
-
-export function checkSmallFiles(savedOriginals, config, addIssue) {
-  const planContainer = document.getElementById('physical-plan-details');
-  if (!planContainer) return;
-
-  const planText = savedOriginals['plan-pre']
-    ? savedOriginals['plan-pre'].text
-    : '';
-
-  const allText = planContainer.textContent || '';
-
-  let filesReadMatch = allText.match(/number of files read[:\s]+(\d[\d,]*)/i);
-  let sizeReadMatch = allText.match(/size of files read[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
-
-  if (!filesReadMatch && !sizeReadMatch) {
-    const detailSections = planContainer.querySelectorAll(
-      '.node-detail, .metrics, [class*="metric"], table'
-    );
-    detailSections.forEach(section => {
-      const text = cellText(section);
-      if (!filesReadMatch) {
-        const fm = text.match(/number of files(?:\s+read)?[:\s]+(\d[\d,]*)/i);
-        if (fm) filesReadMatch = fm;
-      }
-      if (!sizeReadMatch) {
-        const sm = text.match(/size of files(?:\s+read)?[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
-        if (sm) sizeReadMatch = sm;
-      }
-    });
-  }
-
-  if (!filesReadMatch) {
-    const fm = planText.match(/files\s*(?:read|scanned)[:\s]+(\d[\d,]*)/i) ||
-             allText.match(/(?:files|numFiles)[:\s]+(\d[\d,]*)/i);
-    if (fm) filesReadMatch = fm;
-  }
-  if (!sizeReadMatch) {
-    const sm = planText.match(/(?:size|bytes)\s*(?:read|scanned)[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i) ||
-             allText.match(/(?:data\s*size|totalSize)[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
-    if (sm) sizeReadMatch = sm;
-  }
-
-  if (!filesReadMatch || !sizeReadMatch) return;
-
-  const numFiles = parseInt(filesReadMatch[1].replace(/,/g, ''), 10);
-  const totalSize = parseBytes(sizeReadMatch[1]);
-
-  if (isNaN(numFiles) || isNaN(totalSize) || numFiles === 0) return;
-  if (numFiles < config.smallFileMinCount) return;
-
-  const avgSize = totalSize / numFiles;
-  const avgSizeMb = avgSize / 1048576;
-
-  if (avgSizeMb < config.smallFileAvgSizeWarningMb) {
-    const severity = avgSizeMb < config.smallFileAvgSizeCriticalMb ? SEVERITY.WARNING : SEVERITY.INFO;
-    const avgStr = formatBytesHuman(avgSize);
-
-    addIssue(severity, 'Small Files',
-      'Scan reading ' + numFiles.toLocaleString() + ' files averaging ' + avgStr +
-      ' per file. Small files cause excessive task overhead. Consider running OPTIMIZE ' +
-      'to compact files, or adjusting spark.sql.files.maxPartitionBytes.');
-  }
-}
-
-// ---- PII pattern detection in plan metadata ----
-
-const PII_COLUMN_PATTERNS = [
-  /\bemail\b/i, /\bphone\b/i, /\bssn\b/i, /\bsocial_security\b/i,
-  /\bnational_id\b/i, /\bpassport\b/i, /\bcredit_card\b/i, /\bcard_number\b/i,
-  /\bcvv\b/i, /\bdate_of_birth\b/i, /\bdob\b/i, /\bfirst_name\b/i,
-  /\blast_name\b/i, /\bfull_name\b/i, /\bcustomer_name\b/i, /\buser_name\b/i,
-  /\baddress\b/i, /\bpostcode\b/i, /\bzip_code\b/i, /\bip_address\b/i,
-  /\bnational_insurance\b/i, /\bni_number\b/i,
-];
-
-const PII_LITERAL_PATTERNS = [
-  { pattern: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/, label: 'email address' },
-  { pattern: /\b\d{3}-\d{2}-\d{4}\b/, label: 'SSN' },
-  { pattern: /\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/, label: 'phone number' },
-];
-
-export function checkPiiPatterns(savedOriginals, addIssue) {
-  const planContainer = document.getElementById('physical-plan-details');
-  if (!planContainer) return;
-
-  const planText = savedOriginals['plan-pre']
-    ? savedOriginals['plan-pre'].text
-    : (planContainer.textContent || '');
-  if (!planText.trim()) return;
-
-  const foundColumns = {};
-
-  PII_COLUMN_PATTERNS.forEach(pattern => {
-    const matches = planText.match(new RegExp(pattern.source, 'gi'));
-    if (matches) {
-      matches.forEach(match => {
-        const key = match.toLowerCase();
-        if (!foundColumns[key]) {
-          foundColumns[key] = match;
-        }
-      });
-    }
-  });
-
-  Object.keys(foundColumns).forEach(key => {
-    addIssue(SEVERITY.INFO, 'PII',
-      'Potential PII column detected: "' + foundColumns[key] + '". ' +
-      'Verify that this data is handled in compliance with your data governance policies. ' +
-      'Consider column-level masking or access controls in Unity Catalog.');
-  });
-
-  PII_LITERAL_PATTERNS.forEach(entry => {
-    const matches = planText.match(new RegExp(entry.pattern.source, 'g'));
-    if (matches) {
-      const seen = {};
-      const unique = [];
-      matches.forEach(m => {
-        if (!seen[m]) {
-          seen[m] = true;
-          unique.push(m);
-        }
-      });
-      unique.forEach(val => {
-        addIssue(SEVERITY.INFO, 'PII',
-          'Potential PII literal (' + entry.label + ') found in plan: "' + val + '". ' +
-          'Consider whether this value should be visible in query plans/logs.');
-      });
-    }
-  });
 }
 
 // ---- Estimation error detection (SQL detail page) ----

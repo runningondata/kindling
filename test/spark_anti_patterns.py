@@ -31,10 +31,15 @@
 # MAGIC | 16 | Estimation Error | SQL detail |
 # MAGIC | 17 | Memory Utilisation | Executors page |
 # MAGIC | 18 | Failed Query | SQL list / SQL detail |
+# MAGIC | 19 | Shuffle Write | Stage detail |
+# MAGIC | 20 | Python UDF | SQL detail |
+# MAGIC | 21 | Column Usage / Wide Schema | SQL detail |
+# MAGIC | 22 | Failed Stage | Job detail |
 # MAGIC
 # MAGIC ### Notes
 # MAGIC - Cell 12 (stragglers) sleeps for 120 s — check the active stage detail page while it runs
-# MAGIC - Cell 18 (failed query) intentionally throws an error
+# MAGIC - Cell 18 (failed query) and Cell 22 (failed stage) intentionally throw errors
+# MAGIC - Cell 20 (Python UDF) uses `.collect()` not `.count()` — count() lets Catalyst optimise away the UDF
 # MAGIC - Some checks depend on cluster sizing; thresholds may need adjustment on large clusters
 
 # COMMAND ----------
@@ -342,6 +347,80 @@ try:
 except Exception as e:
     print(f"Expected failure: {e}")
     print("Check the SQL / DataFrame tab for the failed query entry.")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 19 — Shuffle Write
+# MAGIC Large equi-join with broadcast disabled. Each executor writes significant shuffle
+# MAGIC data. Check the stage detail summary metrics for the "Shuffle Write" row —
+# MAGIC Kindling flags max shuffle write exceeding `shuffleWriteWarningGib` (default 1 GiB).
+
+# COMMAND ----------
+
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1")
+
+sw_left = spark.range(10_000_000).withColumn("key", (F.col("id") % 500).cast("int")).withColumn("payload", F.concat(F.lit("L_"), F.col("id").cast("string"), F.lit("_" * 50)))
+sw_right = spark.range(10_000_000).withColumn("key", (F.col("id") % 500).cast("int")).withColumn("payload", F.concat(F.lit("R_"), F.col("id").cast("string"), F.lit("_" * 50)))
+sw_left.join(sw_right, "key").count()
+
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold", original_broadcast_threshold)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 20 — Python UDF
+# MAGIC A regular Python UDF appears as `BatchEvalPython` in the physical plan.
+# MAGIC Kindling flags this as a warning because row-by-row JVM↔Python serialisation
+# MAGIC is a common performance bottleneck.
+
+# COMMAND ----------
+
+@F.udf(DoubleType())
+def slow_multiply(x):
+    return x * 2.0 if x is not None else 0.0
+
+udf_df = spark.range(100_000).withColumn("value", F.rand()).withColumn("doubled", slow_multiply(F.col("value")))
+udf_df.agg(F.sum("doubled")).collect()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 21 — Column Usage / Wide Schema
+# MAGIC Writes a 30-column parquet table then reads all columns back (SELECT *).
+# MAGIC Kindling flags scans reading ≥ `wideSchemaColumnThreshold` columns (default 20)
+# MAGIC as an info-level finding suggesting explicit column selection.
+
+# COMMAND ----------
+
+wide_df = spark.range(10_000)
+for i in range(30):
+    wide_df = wide_df.withColumn(f"col_{i}", (F.col("id") + i).cast("string"))
+wide_df.write.mode("overwrite").parquet(f"{TEMP_PATH}/wide_schema_test")
+
+spark.read.parquet(f"{TEMP_PATH}/wide_schema_test").select(
+    *[F.col(f"col_{i}") for i in range(30)]
+).limit(10).collect()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cell 22 — Failed Stage
+# MAGIC A UDF that unconditionally raises an error. The job will fail and the failed
+# MAGIC stage will appear in the job detail page. Kindling highlights failed stage rows
+# MAGIC as critical findings.
+
+# COMMAND ----------
+
+@F.udf(StringType())
+def fail_udf(x):
+    raise RuntimeError("intentional failure for kindling test")
+
+try:
+    spark.range(100).withColumn("boom", fail_udf(F.col("id"))).collect()
+except Exception as e:
+    print(f"Expected failure: {e}")
+    print("Check the Jobs page for the failed job, then click into the job detail.")
 
 # COMMAND ----------
 

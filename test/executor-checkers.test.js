@@ -2,7 +2,7 @@ const {
   createSparkPage, runKindling,
   test, printResults,
   assertContainsCategory, assertNotContainsCategory,
-  assertMinSeverity,
+  assertMessageContains, assertMinSeverity,
 } = require('./helpers');
 
 console.log('\nKindling — Executor & Stage Checker Tests\n');
@@ -124,6 +124,51 @@ test('Detects executor imbalance', () => {
   const result = runKindling(dom);
   assertContainsCategory(result, 'Executor Skew');
   assertMinSeverity(result, 'warning', 1);
+});
+
+// --- Failed Stages ---
+
+console.log('--- Failed Stages ---');
+
+test('Detects failed stages in job detail', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/jobs/job/?id=1',
+    bodyHtml: `
+      <table id="completedStage-table">
+        <thead><tr><th>Stage ID</th><th>Description</th><th>Duration</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>scan at main.py:10</td><td>2 s</td></tr>
+        </tbody>
+      </table>
+      <table id="failedStage-table">
+        <thead><tr><th>Stage ID</th><th>Description</th><th>Duration</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>aggregate at main.py:15</td><td>30 s</td></tr>
+        </tbody>
+      </table>
+    `,
+  });
+  const result = runKindling(dom);
+  assertContainsCategory(result, 'Failed Stage');
+  assertMinSeverity(result, 'critical', 1);
+  assertMessageContains(result, 'Stage 1');
+});
+
+test('No failed stage alert when no failures', () => {
+  const dom = createSparkPage({
+    url: 'http://localhost:4040/jobs/job/?id=2',
+    bodyHtml: `
+      <table id="completedStage-table">
+        <thead><tr><th>Stage ID</th><th>Description</th><th>Duration</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td>scan</td><td>1 s</td></tr>
+          <tr><td>1</td><td>aggregate</td><td>5 s</td></tr>
+        </tbody>
+      </table>
+    `,
+  });
+  const result = runKindling(dom);
+  assertNotContainsCategory(result, 'Failed Stage');
 });
 
 process.exit(printResults());
