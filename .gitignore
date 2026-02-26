@@ -11,3 +11,13 @@ extension/options/options.js
 # Python bytecode
 __pycache__/
 *.pyc
+
+# OS and editor
+.DS_Store
+
+# Secrets
+.env
+.env.*
+
+# Claude Code
+.claude/
