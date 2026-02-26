@@ -24,7 +24,7 @@ export function checkMemoryUtilisation(config, addIssue) {
 
     const used = parseBytes(parts[0].trim());
     const total = parseBytes(parts[1].trim());
-    if (isNaN(used) || isNaN(total) || total === 0) return;
+    if (Number.isNaN(used) || Number.isNaN(total) || total === 0) return;
 
     const utilisation = used / total;
     const executorId = cells[0] ? cellText(cells[0]) : 'unknown';
@@ -70,7 +70,7 @@ export function checkExecutorBalance(config, addIssue) {
     if (cells[0] && cellText(cells[0]).toLowerCase() === 'driver') return;
 
     const val = parseBytes(cellText(cells[shuffleReadCol]));
-    if (!isNaN(val)) items.push({ val, row, cell: cells[shuffleReadCol] });
+    if (!Number.isNaN(val)) items.push({ val, row, cell: cells[shuffleReadCol] });
   });
 
   if (items.length < 2) return;

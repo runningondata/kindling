@@ -4,7 +4,7 @@ const FIELDS = Object.keys(DEFAULT_CONFIG);
 
 function loadConfig() {
   chrome.storage.sync.get('config', result => {
-    const cfg = Object.assign({}, DEFAULT_CONFIG, result.config || {});
+    const cfg = { ...DEFAULT_CONFIG, ...result.config };
     FIELDS.forEach(key => {
       const el = document.getElementById(key);
       if (el) el.value = cfg[key];
@@ -16,7 +16,7 @@ function saveConfig() {
   const cfg = {};
   FIELDS.forEach(key => {
     const el = document.getElementById(key);
-    if (el) cfg[key] = parseFloat(el.value);
+    if (el) cfg[key] = Number.parseFloat(el.value);
   });
 
   chrome.storage.sync.set({ config: cfg }, () => {

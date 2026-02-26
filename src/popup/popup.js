@@ -15,7 +15,7 @@ optionsLink.addEventListener('click', e => {
 });
 
 chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-  if (!tabs || !tabs[0]) {
+  if (!tabs?.[0]) {
     statusEl.textContent = 'No active tab found.';
     statusEl.className = 'error';
     analyzeBtn.disabled = true;
@@ -93,7 +93,7 @@ function displayResults(data) {
   clearBtn.disabled = false;
 
   const total = data.issues.length;
-  const pageLabel = data.pageType.replace(/-/g, ' ');
+  const pageLabel = data.pageType.replaceAll('-', ' ');
 
   if (total === 0) {
     statusEl.innerHTML = 'Spark UI <span class="page-type">' + escapeHtml(pageLabel) + '</span>';
@@ -111,14 +111,14 @@ function displayResults(data) {
     { severity: 'info',     label: 'Info',     items: [] },
   ];
 
-  data.issues.forEach(issue => {
-    for (let i = 0; i < groups.length; i++) {
-      if (groups[i].severity === issue.severity) {
-        groups[i].items.push(issue);
+  for (const issue of data.issues) {
+    for (const g of groups) {
+      if (g.severity === issue.severity) {
+        g.items.push(issue);
         break;
       }
     }
-  });
+  }
 
   let html = '';
   groups.forEach(g => {

@@ -20,7 +20,7 @@ export function checkLongRunningStages(config, addIssue) {
     const cells = row.querySelectorAll('td');
     if (durationCol >= cells.length) return;
     const dur = parseDuration(cellText(cells[durationCol]));
-    if (!isNaN(dur)) items.push({ dur, row, cell: cells[durationCol] });
+    if (!Number.isNaN(dur)) items.push({ dur, row, cell: cells[durationCol] });
   });
 
   if (items.length < 2) return;
@@ -86,7 +86,7 @@ export function addStageBadges(config) {
       const cells = row.querySelectorAll('td');
       if (durationCol < cells.length) {
         const dur = parseDuration(cellText(cells[durationCol]));
-        if (!isNaN(dur)) durations.push(dur);
+        if (!Number.isNaN(dur)) durations.push(dur);
       }
     });
 
@@ -98,7 +98,7 @@ export function addStageBadges(config) {
       const cells = row.querySelectorAll('td');
       if (durationCol >= cells.length) return;
       const dur = parseDuration(cellText(cells[durationCol]));
-      if (isNaN(dur) || medianDur === 0) return;
+      if (Number.isNaN(dur) || medianDur === 0) return;
 
       const ratio = dur / medianDur;
       if (ratio > config.stragglerMultiple) {
@@ -106,8 +106,8 @@ export function addStageBadges(config) {
         if (idCell && !idCell.querySelector('.kindling-stage-badge')) {
           const badge = document.createElement('span');
           badge.className = 'kindling-stage-badge warning kindling-tooltip';
-          badge.setAttribute('data-kindling-tip',
-            'This stage is ' + ratio.toFixed(1) + 'x slower than the median.');
+          badge.dataset.kindlingTip =
+            'This stage is ' + ratio.toFixed(1) + 'x slower than the median.';
           idCell.appendChild(badge);
         }
         highlightRow(row, SEVERITY.WARNING,

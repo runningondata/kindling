@@ -10,8 +10,8 @@ import { checkExecutorBalance, checkMemoryUtilisation } from './checkers/executo
 import { setupSqlHighlighting } from './sql-highlighting.js';
 import { buildPanel } from './panel.js';
 
-if (!window.__kindlingSetup) {
-  window.__kindlingSetup = true;
+if (!globalThis.__kindlingSetup) {
+  globalThis.__kindlingSetup = true;
 
   let config = { ...DEFAULT_CONFIG };
   const issues = [];
@@ -103,7 +103,9 @@ if (!window.__kindlingSetup) {
         warningCount,
         infoCount,
       });
-    } catch (_) { /* popup / service worker may not be listening */ }
+    } catch (e) {
+      console.debug('[Kindling] Badge update skipped:', e.message);
+    }
 
     return {
       sparkDetected: true,
@@ -132,13 +134,15 @@ if (!window.__kindlingSetup) {
         warningCount: 0,
         infoCount: 0,
       });
-    } catch (_) { /* ignore */ }
+    } catch (e) {
+      console.debug('[Kindling] Badge update skipped:', e.message);
+    }
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'kindling-analyze') {
       chrome.storage.sync.get('config', result => {
-        config = Object.assign({}, DEFAULT_CONFIG, result.config || {});
+        config = { ...DEFAULT_CONFIG, ...result.config };
         const results = runDiagnostics();
         sendResponse(results);
       });

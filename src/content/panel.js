@@ -3,13 +3,13 @@ import { escapeHtml } from './utils.js';
 import { getPageType } from './detection.js';
 
 function getQueryIdFromUrl() {
-  const match = window.location.href.match(/[?&]id=(\d+)/);
+  const match = /[?&]id=(\d+)/.exec(globalThis.location.href);
   return match ? match[1] : null;
 }
 
 function getQueryDuration() {
   const text = document.body.innerText;
-  const match = text.match(/Duration[:\s]+([\d.]+\s*(?:ms|s|min|h))/i);
+  const match = /Duration[:\s]+([\d.]+\s*(?:ms|s|min|h))/i.exec(text);
   return match ? match[1] : null;
 }
 
@@ -25,7 +25,7 @@ export function buildExportData(issues) {
   return {
     kindling_version: '2.0.0',
     timestamp: new Date().toISOString(),
-    page_url: window.location.href,
+    page_url: globalThis.location.href,
     page_type: pageType,
     query_id: queryId,
     duration: duration,
@@ -111,7 +111,7 @@ export function setupExportButtons(panel, issues) {
   panel.querySelectorAll('.kindling-export-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
-      const format = btn.getAttribute('data-export');
+      const format = btn.dataset.export;
       if (format === 'json') {
         exportJson(issues, btn);
       } else if (format === 'md') {
@@ -188,7 +188,7 @@ function attachIssueClickHandlers(panel, flatIssues) {
   const issueEls = panel.querySelectorAll('.kindling-issue');
   issueEls.forEach((el, idx) => {
     const issue = flatIssues[idx];
-    if (issue && issue.element) {
+    if (issue?.element) {
       el.style.cursor = 'pointer';
       el.addEventListener('click', () => {
         issue.element.scrollIntoView({ behavior: 'smooth', block: 'center' });

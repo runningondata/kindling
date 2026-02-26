@@ -5,7 +5,7 @@ export function findColumnIndex(table, headerText) {
   const headers = table.querySelectorAll('thead th');
   const search = headerText.toLowerCase();
   for (let i = 0; i < headers.length; i++) {
-    if (cellText(headers[i]).toLowerCase().indexOf(search) !== -1) return i;
+    if (cellText(headers[i]).toLowerCase().includes(search)) return i;
   }
   return -1;
 }
@@ -19,16 +19,18 @@ export function getDataRows(table) {
 
 export function findTable(idOrPartial) {
   let table = document.getElementById(idOrPartial);
-  if (table && table.tagName === 'TABLE') return table;
+  if (table?.tagName === 'TABLE') return table;
 
   try {
     table = document.querySelector('table#' + CSS.escape(idOrPartial));
     if (table) return table;
-  } catch (_) { /* CSS.escape may not exist in very old browsers */ }
+  } catch (e) {
+    console.debug('[Kindling] CSS.escape not available:', e.message);
+  }
 
   const tables = document.querySelectorAll('table[id]');
-  for (let i = 0; i < tables.length; i++) {
-    if (tables[i].id.indexOf(idOrPartial) !== -1) return tables[i];
+  for (const t of tables) {
+    if (t.id.includes(idOrPartial)) return t;
   }
   return null;
 }

@@ -25,17 +25,17 @@ export function highlightPlanVizNodes() {
 
   svg.querySelectorAll('.node').forEach(node => {
     const label = node.getAttribute('name') || '';
-    for (let i = 0; i < PLAN_VIZ_PATTERNS.length; i++) {
-      if (!PLAN_VIZ_PATTERNS[i].pattern.test(label)) continue;
+    for (const entry of PLAN_VIZ_PATTERNS) {
+      if (!entry.pattern.test(label)) continue;
 
       const rect = node.querySelector('rect');
       if (!rect) break;
 
-      const colors = PLAN_VIZ_COLORS[PLAN_VIZ_PATTERNS[i].severity];
+      const colors = PLAN_VIZ_COLORS[entry.severity];
 
-      if (!rect.hasAttribute('data-kindling-original-fill')) {
-        rect.setAttribute('data-kindling-original-fill', rect.style.fill || '');
-        rect.setAttribute('data-kindling-original-stroke', rect.style.stroke || '');
+      if (!('kindlingOriginalFill' in rect.dataset)) {
+        rect.dataset.kindlingOriginalFill = rect.style.fill || '';
+        rect.dataset.kindlingOriginalStroke = rect.style.stroke || '';
       }
 
       rect.style.fill = colors.fill;
@@ -176,13 +176,11 @@ function describeFailedRow(row, table) {
 
   const parts = [];
 
-  // Try the first cell as a numeric ID (most SQL tables start with ID column)
   const firstCell = cellText(cells[0]).trim();
   if (/^\d+$/.test(firstCell)) {
     parts.push('ID ' + firstCell);
   }
 
-  // Try the description column, or fall back to the second cell
   const descCol = findColumnIndex(table, 'description');
   const descIdx = descCol !== -1 ? descCol : 1;
   if (descIdx < cells.length) {
@@ -207,17 +205,16 @@ function checkFailedQueriesOnList(addIssue) {
       const cells = row.querySelectorAll('td');
       if (statusCol >= cells.length) return;
       const status = cellText(cells[statusCol]).toLowerCase().trim();
-      if (status === 'failed') {
-        const label = describeFailedRow(row, table) || 'Unknown query';
-        highlightRow(row, SEVERITY.CRITICAL,
-          'This query failed. Click to see error details.');
-        addIssue(SEVERITY.CRITICAL, 'Failed Query',
-          'Failed query ' + label, row);
-      }
+      if (status !== 'failed') return;
+
+      const label = describeFailedRow(row, table) || 'Unknown query';
+      highlightRow(row, SEVERITY.CRITICAL,
+        'This query failed. Click to see error details.');
+      addIssue(SEVERITY.CRITICAL, 'Failed Query',
+        'Failed query ' + label, row);
     });
   });
 
-  // Only match rows that have an explicit "FAILED" status text in a cell
   document.querySelectorAll('td.failed, td.FAILED').forEach(el => {
     const row = el.closest('tr');
     if (row && !row.classList.contains('kindling-highlight-critical')) {
@@ -250,25 +247,25 @@ function checkFailedQueriesOnDetail(addIssue) {
 
   const headers = document.querySelectorAll('h3, h4, .title, .page-title');
   headers.forEach(h => {
-    if (/failed/i.test(cellText(h))) {
-      const nextSibling = h.nextElementSibling;
-      let errorMsg = '';
-      if (nextSibling) {
-        errorMsg = cellText(nextSibling);
-      }
-      if (!errorMsg) {
-        const pre = document.querySelector('pre.stacktrace, pre.error, .error pre');
-        if (pre) errorMsg = cellText(pre);
-      }
+    if (!/failed/i.test(cellText(h))) return;
 
-      if (errorMsg) {
-        const shortError = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
-        addIssue(SEVERITY.CRITICAL, 'Failed Query',
-          'Query failed: ' + shortError, h);
-      } else {
-        addIssue(SEVERITY.CRITICAL, 'Failed Query',
-          'This query has failed. Check the Spark UI for error details.', h);
-      }
+    const nextSibling = h.nextElementSibling;
+    let errorMsg = '';
+    if (nextSibling) {
+      errorMsg = cellText(nextSibling);
+    }
+    if (!errorMsg) {
+      const pre = document.querySelector('pre.stacktrace, pre.error, .error pre');
+      if (pre) errorMsg = cellText(pre);
+    }
+
+    if (errorMsg) {
+      const shortError = errorMsg.length > 200 ? errorMsg.substring(0, 200) + '...' : errorMsg;
+      addIssue(SEVERITY.CRITICAL, 'Failed Query',
+        'Query failed: ' + shortError, h);
+    } else {
+      addIssue(SEVERITY.CRITICAL, 'Failed Query',
+        'This query has failed. Check the Spark UI for error details.', h);
     }
   });
 }
@@ -280,6 +277,12 @@ export function checkFailedQueries(pageType, addIssue) {
 
 // ---- Estimation error detection (SQL detail page) ----
 
+function parseEstimationMultiplier(text) {
+  const em = text.match(/\((\d[\d,]*)X\)/);
+  if (!em) return Number.NaN;
+  return Number.parseInt(em[1].replaceAll(',', ''), 10);
+}
+
 export function checkEstimationErrors(config, addIssue) {
   const planContainer = document.getElementById('physical-plan-details');
   if (!planContainer) return;
@@ -290,8 +293,8 @@ export function checkEstimationErrors(config, addIssue) {
   let match;
 
   while ((match = errorPattern.exec(allText)) !== null) {
-    const multiplier = parseInt(match[1].replace(/,/g, ''), 10);
-    if (isNaN(multiplier)) continue;
+    const multiplier = Number.parseInt(match[1].replaceAll(',', ''), 10);
+    if (Number.isNaN(multiplier)) continue;
 
     if (multiplier >= config.estimationErrorCritical) {
       addIssue(SEVERITY.CRITICAL, 'Estimation Error',
@@ -313,14 +316,11 @@ export function checkEstimationErrors(config, addIssue) {
     const rows = getDataRows(table);
     rows.forEach(row => {
       const text = cellText(row);
-      const em = text.match(/\((\d[\d,]*)X\)/);
-      if (em) {
-        const mult = parseInt(em[1].replace(/,/g, ''), 10);
-        if (!isNaN(mult) && mult >= config.estimationErrorWarning) {
-          highlightRow(row, mult >= config.estimationErrorCritical ? SEVERITY.CRITICAL : SEVERITY.WARNING,
-            'Estimation error: ' + mult.toLocaleString() + 'x off.\n' +
-            'Run ANALYZE TABLE to update statistics.');
-        }
+      const mult = parseEstimationMultiplier(text);
+      if (!Number.isNaN(mult) && mult >= config.estimationErrorWarning) {
+        highlightRow(row, mult >= config.estimationErrorCritical ? SEVERITY.CRITICAL : SEVERITY.WARNING,
+          'Estimation error: ' + mult.toLocaleString() + 'x off.\n' +
+          'Run ANALYZE TABLE to update statistics.');
       }
     });
   });

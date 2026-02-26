@@ -9,7 +9,7 @@ export function checkSkew(metrics, config, addIssue) {
   if (!d) return;
 
   const median = d.median, p75 = d.p75, max = d.max;
-  if (isNaN(max) || isNaN(p75) || isNaN(median)) return;
+  if (Number.isNaN(max) || Number.isNaN(p75) || Number.isNaN(median)) return;
   if (max === 0 || p75 === 0 || median === 0) return;
 
   const maxP75 = max / p75;
@@ -45,7 +45,7 @@ export function checkSpill(metrics, config, addIssue) {
   function check(metric, label) {
     if (!metric) return;
     const max = metric.max;
-    if (isNaN(max) || max === 0) return;
+    if (Number.isNaN(max) || max === 0) return;
 
     let severity = SEVERITY.WARNING;
     let tip = label + ' detected (max: ' + cellText(metric.cells[5]) + ').\n' +
@@ -67,6 +67,40 @@ export function checkSpill(metrics, config, addIssue) {
   check(diskSpill, 'Disk spill');
 }
 
+function findWorstGcRatio(dur, gc) {
+  const keys   = ['min', 'p25', 'median', 'p75', 'max'];
+  const labels = ['Min', '25th pctl', 'Median', '75th pctl', 'Max'];
+
+  let worstRatio = 0;
+  let worstLabel = '';
+
+  for (let i = 0; i < keys.length; i++) {
+    const d = dur[keys[i]], g = gc[keys[i]];
+    if (Number.isNaN(d) || Number.isNaN(g) || d === 0) continue;
+    const ratio = g / d;
+    if (ratio > worstRatio) {
+      worstRatio = ratio;
+      worstLabel = labels[i];
+    }
+  }
+
+  return { worstRatio, worstLabel };
+}
+
+function highlightGcCells(dur, gc, config, severity) {
+  const keys = ['min', 'p25', 'median', 'p75', 'max'];
+  const idx  = [1, 2, 3, 4, 5];
+
+  for (let j = 0; j < keys.length; j++) {
+    const d2 = dur[keys[j]], g2 = gc[keys[j]];
+    if (Number.isNaN(d2) || Number.isNaN(g2) || d2 === 0) continue;
+    if (g2 / d2 > config.gcPressureThreshold) {
+      highlightCell(gc.cells[idx[j]], severity,
+        'GC: ' + (g2 / d2 * 100).toFixed(1) + '% of duration');
+    }
+  }
+}
+
 export function checkGCPressure(metrics, config, addIssue) {
   if (!metrics) return;
 
@@ -74,22 +108,7 @@ export function checkGCPressure(metrics, config, addIssue) {
   const gc  = metrics['GC Time'];
   if (!dur || !gc) return;
 
-  const keys   = ['min', 'p25', 'median', 'p75', 'max'];
-  const labels = ['Min', '25th pctl', 'Median', '75th pctl', 'Max'];
-  const idx    = [1, 2, 3, 4, 5];
-
-  let worstRatio = 0;
-  let worstLabel = '';
-
-  for (let i = 0; i < keys.length; i++) {
-    const d = dur[keys[i]], g = gc[keys[i]];
-    if (isNaN(d) || isNaN(g) || d === 0) continue;
-    const ratio = g / d;
-    if (ratio > worstRatio) {
-      worstRatio = ratio;
-      worstLabel = labels[i];
-    }
-  }
+  const { worstRatio, worstLabel } = findWorstGcRatio(dur, gc);
 
   if (worstRatio > config.gcPressureThreshold) {
     const pct = (worstRatio * 100).toFixed(1);
@@ -99,14 +118,7 @@ export function checkGCPressure(metrics, config, addIssue) {
       'GC pressure: ' + pct + '% of task time in GC (' + worstLabel + ').\n' +
       'Fix: Increase executor memory or tune GC settings.');
 
-    for (let j = 0; j < keys.length; j++) {
-      const d2 = dur[keys[j]], g2 = gc[keys[j]];
-      if (isNaN(d2) || isNaN(g2) || d2 === 0) continue;
-      if (g2 / d2 > config.gcPressureThreshold) {
-        highlightCell(gc.cells[idx[j]], severity,
-          'GC: ' + (g2 / d2 * 100).toFixed(1) + '% of duration');
-      }
-    }
+    highlightGcCells(dur, gc, config, severity);
 
     addIssue(severity, 'GC Pressure',
       'GC consuming ' + pct + '% of task time at ' + worstLabel +
@@ -128,7 +140,7 @@ export function checkStragglers(config, addIssue) {
     const cells = row.querySelectorAll('td');
     if (durationCol >= cells.length) return;
     const dur = parseDuration(cellText(cells[durationCol]));
-    if (!isNaN(dur)) {
+    if (!Number.isNaN(dur)) {
       durations.push({ dur, row, cell: cells[durationCol] });
     }
   });
@@ -166,7 +178,7 @@ export function checkShuffleWrite(metrics, config, addIssue) {
   if (!sw) return;
 
   const max = sw.max;
-  if (isNaN(max) || max === 0) return;
+  if (Number.isNaN(max) || max === 0) return;
 
   const thresholdBytes = config.shuffleWriteWarningGib * ONE_GIB;
   if (max > thresholdBytes) {
@@ -188,20 +200,20 @@ export function checkShuffleWrite(metrics, config, addIssue) {
 export function checkSmallTasks(metrics, config, addIssue) {
   if (!metrics) return;
   const d = metrics['Duration'];
-  if (!d || isNaN(d.median)) return;
+  if (!d || Number.isNaN(d.median)) return;
 
   let taskCount = 0;
   const bodyText = document.body.innerText || document.body.textContent || '';
-  const m = bodyText.match(/Total Tasks[:\s]+(\d[\d,]*)/i) ||
-            bodyText.match(/(\d[\d,]*)\s+Completed\s+Tasks/i) ||
-            bodyText.match(/(\d[\d,]*)\s+tasks?/i);
-  if (m) taskCount = parseInt(m[1].replace(/,/g, ''), 10);
+  const m = /Total Tasks[:\s]+(\d[\d,]*)/i.exec(bodyText) ||
+            /(\d[\d,]*)\s+Completed\s+Tasks/i.exec(bodyText) ||
+            /(\d[\d,]*)\s+tasks?/i.exec(bodyText);
+  if (m) taskCount = Number.parseInt(m[1].replaceAll(',', ''), 10);
 
   if (taskCount === 0) {
     const info = document.querySelector('.dataTables_info');
     if (info) {
-      const im = cellText(info).match(/of\s+([\d,]+)\s+entries/i);
-      if (im) taskCount = parseInt(im[1].replace(/,/g, ''), 10);
+      const im = /of\s+([\d,]+)\s+entries/i.exec(cellText(info));
+      if (im) taskCount = Number.parseInt(im[1].replaceAll(',', ''), 10);
     }
   }
 

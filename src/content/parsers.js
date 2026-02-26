@@ -17,13 +17,13 @@ const BYTE_UNITS = {
 };
 
 export function parseDuration(str) {
-  if (!str || typeof str !== 'string') return NaN;
+  if (!str || typeof str !== 'string') return Number.NaN;
   str = str.trim();
-  if (str === '' || str === '-') return NaN;
+  if (str === '' || str === '-') return Number.NaN;
 
   const match = str.match(/^([\d.]+)\s*(ms|s|min|h|d)$/i);
   if (match) {
-    const val = parseFloat(match[1]);
+    const val = Number.parseFloat(match[1]);
     const multiplier = DURATION_UNITS[match[2].toLowerCase()];
     if (multiplier) return val * multiplier;
   }
@@ -31,16 +31,16 @@ export function parseDuration(str) {
   // Only return bare number if string has no letter suffixes (avoids
   // matching byte values like "2.0 GiB" as 2.0 ms duration).
   if (!/[a-zA-Z]/.test(str)) {
-    const bare = parseFloat(str);
-    if (!isNaN(bare)) return bare;
+    const bare = Number.parseFloat(str);
+    if (!Number.isNaN(bare)) return bare;
   }
-  return NaN;
+  return Number.NaN;
 }
 
 export function parseBytes(str) {
-  if (!str || typeof str !== 'string') return NaN;
+  if (!str || typeof str !== 'string') return Number.NaN;
   str = str.trim();
-  if (str === '' || str === '-') return NaN;
+  if (str === '' || str === '-') return Number.NaN;
 
   // Handle compound strings like "1.5 GiB / 1000"
   const slashIdx = str.indexOf('/');
@@ -50,26 +50,26 @@ export function parseBytes(str) {
     /^([\d.]+)\s*(B|KiB|MiB|GiB|TiB|PiB|KB|MB|GB|TB|PB|EiB|EB)$/i
   );
   if (match) {
-    const val = parseFloat(match[1]);
+    const val = Number.parseFloat(match[1]);
     const multiplier = BYTE_UNITS[match[2].toLowerCase()];
     if (multiplier !== undefined) return val * multiplier;
   }
 
-  const bare = parseFloat(str);
-  if (!isNaN(bare)) return bare;
-  return NaN;
+  const bare = Number.parseFloat(str);
+  if (!Number.isNaN(bare)) return bare;
+  return Number.NaN;
 }
 
 export function parseCellValue(str) {
-  if (!str || typeof str !== 'string') return NaN;
+  if (!str || typeof str !== 'string') return Number.NaN;
   str = str.trim();
-  if (str === '' || str === '-') return NaN;
+  if (str === '' || str === '-') return Number.NaN;
 
   let val = parseDuration(str);
-  if (!isNaN(val)) return val;
+  if (!Number.isNaN(val)) return val;
   val = parseBytes(str);
-  if (!isNaN(val)) return val;
-  return parseFloat(str.replace(/,/g, ''));
+  if (!Number.isNaN(val)) return val;
+  return Number.parseFloat(str.replaceAll(',', ''));
 }
 
 export function cellText(td) {
