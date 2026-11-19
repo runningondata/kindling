@@ -10,6 +10,7 @@
     "build": "node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
     "lint": "eslint src/ test/ esbuild.config.js eslint.config.js scripts/",
+    "test:coverage": "COVERAGE=1 npm run build && c8 --reporter=lcov --reporter=text-summary --include='src/**' --exclude-after-remap --all npm test",
     "test": "node test/detection.test.js && node test/stage-checkers.test.js && node test/sql-checkers.test.js && node test/sql-data-checkers.test.js && node test/executor-checkers.test.js && node test/panel.test.js && node test/config.test.js",
     "test:e2e": "npm run build && cd test/e2e && uv run playwright install chromium --with-deps && uv run pytest -v",
     "build:firefox": "node scripts/build-firefox.js",
@@ -37,6 +38,7 @@
   "homepage": "https://github.com/allyreilly/kindling#readme",
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "c8": "^12.0.0",
     "esbuild": "^0.25.0",
     "eslint": "^9.0.0",
     "globals": "^15.0.0",
