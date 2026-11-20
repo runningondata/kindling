@@ -3,6 +3,53 @@ import { parseBytes, cellText, formatBytesHuman } from '../parsers.js';
 
 // ---- Small files reading detection (SQL detail page) ----
 
+function findFilesReadMatch(planContainer, allText, planText) {
+  let filesReadMatch = /number of files read[:\s]+(\d[\d,]*)/i.exec(allText);
+
+  if (!filesReadMatch) {
+    const detailSections = planContainer.querySelectorAll(
+      '.node-detail, .metrics, [class*="metric"], table'
+    );
+    for (const section of detailSections) {
+      const text = cellText(section);
+      const fm = /number of files(?:\s+read)?[:\s]+(\d[\d,]*)/i.exec(text);
+      if (fm) { filesReadMatch = fm; break; }
+    }
+  }
+
+  if (!filesReadMatch) {
+    filesReadMatch =
+      /files\s*(?:read|scanned)[:\s]+(\d[\d,]*)/i.exec(planText) ||
+      /(?:files|numFiles)[:\s]+(\d[\d,]*)/i.exec(allText);
+  }
+
+  return filesReadMatch;
+}
+
+function findSizeReadMatch(planContainer, allText, planText) {
+  const byteSuffix = '(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB)';
+  let sizeReadMatch = new RegExp('size of files read[:\\s]+([\\d.]+\\s*' + byteSuffix + ')', 'i').exec(allText);
+
+  if (!sizeReadMatch) {
+    const detailSections = planContainer.querySelectorAll(
+      '.node-detail, .metrics, [class*="metric"], table'
+    );
+    for (const section of detailSections) {
+      const text = cellText(section);
+      const sm = new RegExp('size of files(?:\\s+read)?[:\\s]+([\\d.]+\\s*' + byteSuffix + ')', 'i').exec(text);
+      if (sm) { sizeReadMatch = sm; break; }
+    }
+  }
+
+  if (!sizeReadMatch) {
+    sizeReadMatch =
+      new RegExp('(?:size|bytes)\\s*(?:read|scanned)[:\\s]+([\\d.]+\\s*' + byteSuffix + ')', 'i').exec(planText) ||
+      new RegExp('(?:data\\s*size|totalSize)[:\\s]+([\\d.]+\\s*' + byteSuffix + ')', 'i').exec(allText);
+  }
+
+  return sizeReadMatch;
+}
+
 export function checkSmallFiles(savedOriginals, config, addIssue) {
   const planContainer = document.getElementById('physical-plan-details');
   if (!planContainer) return;
@@ -13,43 +60,15 @@ export function checkSmallFiles(savedOriginals, config, addIssue) {
 
   const allText = planContainer.textContent || '';
 
-  let filesReadMatch = allText.match(/number of files read[:\s]+(\d[\d,]*)/i);
-  let sizeReadMatch = allText.match(/size of files read[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
-
-  if (!filesReadMatch && !sizeReadMatch) {
-    const detailSections = planContainer.querySelectorAll(
-      '.node-detail, .metrics, [class*="metric"], table'
-    );
-    detailSections.forEach(section => {
-      const text = cellText(section);
-      if (!filesReadMatch) {
-        const fm = text.match(/number of files(?:\s+read)?[:\s]+(\d[\d,]*)/i);
-        if (fm) filesReadMatch = fm;
-      }
-      if (!sizeReadMatch) {
-        const sm = text.match(/size of files(?:\s+read)?[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
-        if (sm) sizeReadMatch = sm;
-      }
-    });
-  }
-
-  if (!filesReadMatch) {
-    const fm = planText.match(/files\s*(?:read|scanned)[:\s]+(\d[\d,]*)/i) ||
-             allText.match(/(?:files|numFiles)[:\s]+(\d[\d,]*)/i);
-    if (fm) filesReadMatch = fm;
-  }
-  if (!sizeReadMatch) {
-    const sm = planText.match(/(?:size|bytes)\s*(?:read|scanned)[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i) ||
-             allText.match(/(?:data\s*size|totalSize)[:\s]+([\d.]+\s*(?:B|KiB|MiB|GiB|TiB|KB|MB|GB|TB))/i);
-    if (sm) sizeReadMatch = sm;
-  }
+  const filesReadMatch = findFilesReadMatch(planContainer, allText, planText);
+  const sizeReadMatch = findSizeReadMatch(planContainer, allText, planText);
 
   if (!filesReadMatch || !sizeReadMatch) return;
 
-  const numFiles = parseInt(filesReadMatch[1].replace(/,/g, ''), 10);
+  const numFiles = Number.parseInt(filesReadMatch[1].replaceAll(',', ''), 10);
   const totalSize = parseBytes(sizeReadMatch[1]);
 
-  if (isNaN(numFiles) || isNaN(totalSize) || numFiles === 0) return;
+  if (Number.isNaN(numFiles) || Number.isNaN(totalSize) || numFiles === 0) return;
   if (numFiles < config.smallFileMinCount) return;
 
   const avgSize = totalSize / numFiles;
@@ -135,6 +154,47 @@ export function checkPiiPatterns(savedOriginals, addIssue) {
 
 // ---- Column usage / wide schema detection (SQL detail page) ----
 
+function countSchemaFields(schemaBody) {
+  let depth = 0;
+  let fieldCount = 1;
+  for (const ch of schemaBody) {
+    if (ch === '<') depth++;
+    else if (ch === '>') depth--;
+    else if (ch === ',' && depth === 0) fieldCount++;
+  }
+  return fieldCount;
+}
+
+function checkReadSchemas(planText, config, addIssue) {
+  const schemaPattern = /ReadSchema:\s*struct<([^>]+)>/g;
+  let match;
+  while ((match = schemaPattern.exec(planText)) !== null) {
+    const fieldCount = countSchemaFields(match[1]);
+    if (fieldCount >= config.wideSchemaColumnThreshold) {
+      addIssue(SEVERITY.INFO, 'Column Usage',
+        'Scan reading ' + fieldCount + ' columns (threshold: ' +
+        config.wideSchemaColumnThreshold + '). ' +
+        'Wide schemas increase I/O and memory usage. Consider selecting only the columns ' +
+        'you need instead of SELECT *.');
+    }
+  }
+}
+
+function checkScanColumns(planText, config, addIssue) {
+  const scanColPattern = /(?:FileScan|Scan)\s+\w+[^[]*\[([^\]]+)\]/g;
+  let match;
+  while ((match = scanColPattern.exec(planText)) !== null) {
+    const cols = match[1].split(',');
+    if (cols.length >= config.wideSchemaColumnThreshold) {
+      if (!planText.includes('ReadSchema:')) {
+        addIssue(SEVERITY.INFO, 'Column Usage',
+          'Scan outputs ' + cols.length + ' columns. ' +
+          'Wide output suggests a possible SELECT *. Consider explicit column selection.');
+      }
+    }
+  }
+}
+
 export function checkColumnUsage(savedOriginals, config, addIssue) {
   const planContainer = document.getElementById('physical-plan-details');
   if (!planContainer) return;
@@ -144,44 +204,8 @@ export function checkColumnUsage(savedOriginals, config, addIssue) {
     : (planContainer.textContent || '');
   if (!planText.trim()) return;
 
-  // Match ReadSchema from FileScan lines: ReadSchema: struct<col1:type,col2:type,...>
-  const schemaPattern = /ReadSchema:\s*struct<([^>]+)>/g;
-  let match;
-
-  while ((match = schemaPattern.exec(planText)) !== null) {
-    const schemaBody = match[1];
-    // Count fields by splitting on commas that are not inside nested angle brackets
-    let depth = 0;
-    let fieldCount = 1;
-    for (let i = 0; i < schemaBody.length; i++) {
-      if (schemaBody[i] === '<') depth++;
-      else if (schemaBody[i] === '>') depth--;
-      else if (schemaBody[i] === ',' && depth === 0) fieldCount++;
-    }
-
-    if (fieldCount >= config.wideSchemaColumnThreshold) {
-      addIssue(SEVERITY.INFO, 'Column Usage',
-        'Scan reading ' + fieldCount + ' columns (threshold: ' +
-        config.wideSchemaColumnThreshold + '). ' +
-        'Wide schemas increase I/O and memory usage. Consider selecting only the columns ' +
-        'you need instead of SELECT *.');
-    }
-  }
-
-  // Also check for output column lists in scan operators: FileScan parquet [col1, col2, ...]
-  const scanColPattern = /(?:FileScan|Scan)\s+\w+[^[]*\[([^\]]+)\]/g;
-  while ((match = scanColPattern.exec(planText)) !== null) {
-    const cols = match[1].split(',');
-    if (cols.length >= config.wideSchemaColumnThreshold) {
-      // Avoid duplicate if ReadSchema already flagged
-      const alreadyFlagged = (planText.indexOf('ReadSchema:') !== -1);
-      if (!alreadyFlagged) {
-        addIssue(SEVERITY.INFO, 'Column Usage',
-          'Scan outputs ' + cols.length + ' columns. ' +
-          'Wide output suggests a possible SELECT *. Consider explicit column selection.');
-      }
-    }
-  }
+  checkReadSchemas(planText, config, addIssue);
+  checkScanColumns(planText, config, addIssue);
 }
 
 // ---- Python UDF detection (SQL detail page) ----

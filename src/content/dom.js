@@ -3,7 +3,7 @@ export function highlightElement(el, severity, tip) {
   el.classList.add('kindling-highlight-' + severity);
   if (tip) {
     el.classList.add('kindling-tooltip');
-    el.setAttribute('data-kindling-tip', tip);
+    el.dataset.kindlingTip = tip;
   }
 }
 
@@ -27,7 +27,7 @@ export function clearHighlights(savedOriginals) {
       'kindling-highlight-info',
       'kindling-tooltip'
     );
-    el.removeAttribute('data-kindling-tip');
+    delete el.dataset.kindlingTip;
   });
 
   document.querySelectorAll('.kindling-stage-badge').forEach(el => {
@@ -36,10 +36,10 @@ export function clearHighlights(savedOriginals) {
 
   // Reset any coloured plan-viz SVG nodes
   document.querySelectorAll('#plan-viz-graph .node rect[data-kindling-original-fill]').forEach(rect => {
-    rect.style.fill = rect.getAttribute('data-kindling-original-fill');
-    rect.style.stroke = rect.getAttribute('data-kindling-original-stroke') || '';
-    rect.removeAttribute('data-kindling-original-fill');
-    rect.removeAttribute('data-kindling-original-stroke');
+    rect.style.fill = rect.dataset.kindlingOriginalFill;
+    rect.style.stroke = rect.dataset.kindlingOriginalStroke || '';
+    delete rect.dataset.kindlingOriginalFill;
+    delete rect.dataset.kindlingOriginalStroke;
   });
 
   // Remove SQL syntax highlighting tooltips
@@ -50,7 +50,7 @@ export function clearHighlights(savedOriginals) {
   // Restore any original DOM content we replaced
   for (const key of Object.keys(savedOriginals)) {
     const entry = savedOriginals[key];
-    if (entry.element && entry.element.parentNode) {
+    if (entry.element?.parentNode) {
       entry.element.textContent = entry.text;
     }
     delete savedOriginals[key];

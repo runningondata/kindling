@@ -7,8 +7,8 @@ export function detectSparkUI() {
   let tabMatches = 0;
   navLinks.forEach(link => {
     const text = link.textContent.trim();
-    for (let i = 0; i < sparkTabs.length; i++) {
-      if (text === sparkTabs[i]) { tabMatches++; break; }
+    for (const tab of sparkTabs) {
+      if (text === tab) { tabMatches++; break; }
     }
   });
   if (tabMatches >= 3) return true;
@@ -25,8 +25,8 @@ export function detectSparkUI() {
     'active-executors-table', 'summary-execs-table',
     'running-table', 'completed-table', 'failed-table',
   ];
-  for (let i = 0; i < sparkTableIds.length; i++) {
-    if (document.getElementById(sparkTableIds[i])) return true;
+  for (const id of sparkTableIds) {
+    if (document.getElementById(id)) return true;
   }
 
   // 4. Check for the Spark UI footer
@@ -37,8 +37,8 @@ export function detectSparkUI() {
 }
 
 export function getPageType() {
-  const path = window.location.pathname;
-  const hash = window.location.hash;
+  const path = globalThis.location.pathname;
+  const hash = globalThis.location.hash;
 
   if (/\/stages\/stage\b/.test(path) || /\/stages\/stage\b/.test(hash)) {
     return 'stage-detail';
@@ -62,7 +62,7 @@ export function getPageType() {
   if (/\/executors\/?$/.test(path)) {
     return 'executors';
   }
-  if (/\/$/.test(path)) {
+  if (path.endsWith('/')) {
     return 'jobs-list';
   }
   return 'unknown';
