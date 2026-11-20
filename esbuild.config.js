@@ -7,6 +7,8 @@ const shared = {
   format: 'iife',
   target: 'chrome88',
   minify: false,
+  // Lets c8 map coverage of the bundle, which tests eval inside JSDOM, back to src/
+  sourcemap: process.env.COVERAGE ? 'inline' : false,
   logLevel: 'info',
 };
 
