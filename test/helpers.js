@@ -3,10 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const kindlingSource = fs.readFileSync(
-  path.resolve(__dirname, '..', 'extension', 'content', 'kindling.js'),
-  'utf8'
-);
+const kindlingPath = path.resolve(__dirname, '..', 'extension', 'content', 'kindling.js');
+// The sourceURL lets V8 coverage attribute the eval'd bundle to its file
+const kindlingSource = fs.readFileSync(kindlingPath, 'utf8') +
+  `\n//# sourceURL=${require('url').pathToFileURL(kindlingPath)}`;
 
 const STUBS = `
   if (!window.chrome) window.chrome = {};
